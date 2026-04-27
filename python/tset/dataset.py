@@ -148,55 +148,70 @@ class Dataset:
                     return p, r.prove_inclusion(doc_hash)
         raise KeyError(f"document {doc_hash.hex()} not present in any shard")
 
-    def prove_non_inclusion(
-        self, doc_hash: bytes
-    ) -> dict:
-        """Compose a dataset-level non-inclusion proof: per-shard SMT
-        non-inclusion proofs, plus the exclusion-overlay assertion."""
+    def prove_non_inclusion(self, doc_hash: bytes) -> dict:
+        """Compose a dataset-level non-inclusion proof.
+
+        For each shard, attach either:
+        - a `NonInclusionProof` against the shard's SMT root (doc absent), or
+        - an `InclusionProof` against the shard's SMT root (doc present, but
+          dataset-level overlay must exclude it).
+
+        Verification then binds *every* shard claim to its SMT root; the
+        `present_but_excluded` flag never short-circuits without a proof.
+        """
+        excluded = doc_hash.hex() in self._exclusions
         per_shard = []
         for p in self._shard_paths:
             with Reader(p) as r:
+                smt_root = r.smt_root().hex()
                 if r.has_document(doc_hash):
-                    if doc_hash.hex() not in self._exclusions:
+                    if not excluded:
                         raise ValueError(
                             f"document {doc_hash.hex()} present in shard {p} and not excluded"
                         )
-                proof = r.prove_non_inclusion(doc_hash) if not r.has_document(doc_hash) else None
-                per_shard.append(
-                    {
-                        "shard": p,
-                        "smt_root": r.smt_root().hex(),
-                        "non_inclusion_proof": (
-                            None
-                            if proof is None
-                            else {
-                                "siblings": [s.hex() for s in proof.siblings],
-                            }
-                        ),
-                        "present_but_excluded": proof is None,
-                    }
-                )
+                    ip = r.prove_inclusion(doc_hash)
+                    per_shard.append(
+                        {
+                            "shard": p,
+                            "smt_root": smt_root,
+                            "claim": "present_but_excluded",
+                            "inclusion_proof": {"siblings": [s.hex() for s in ip.siblings]},
+                        }
+                    )
+                else:
+                    nip = r.prove_non_inclusion(doc_hash)
+                    per_shard.append(
+                        {
+                            "shard": p,
+                            "smt_root": smt_root,
+                            "claim": "absent",
+                            "non_inclusion_proof": {
+                                "siblings": [s.hex() for s in nip.siblings]
+                            },
+                        }
+                    )
         return {
             "doc_hash": doc_hash.hex(),
             "dataset_merkle_root": self.dataset_merkle_root().hex(),
             "shards": per_shard,
-            "exclusion_overlay_includes": doc_hash.hex() in self._exclusions,
+            "exclusion_overlay_includes": excluded,
         }
 
     def verify_non_inclusion_proof(self, proof: dict) -> bool:
         doc_hash = bytes.fromhex(proof["doc_hash"])
-        per_shard = proof["shards"]
-        for s in per_shard:
-            if s["present_but_excluded"]:
-                if not s.get("exclusion_overlay_includes", False) and not proof.get(
-                    "exclusion_overlay_includes", False
-                ):
+        for s in proof["shards"]:
+            smt_root = bytes.fromhex(s["smt_root"])
+            if s["claim"] == "absent":
+                siblings = [bytes.fromhex(x) for x in s["non_inclusion_proof"]["siblings"]]
+                if not NonInclusionProof(key=doc_hash, siblings=siblings).verify(smt_root):
                     return False
-                continue
-            sib_hex = s["non_inclusion_proof"]["siblings"]
-            siblings = [bytes.fromhex(x) for x in sib_hex]
-            nip = NonInclusionProof(key=doc_hash, siblings=siblings)
-            if not nip.verify(bytes.fromhex(s["smt_root"])):
+            elif s["claim"] == "present_but_excluded":
+                if not proof.get("exclusion_overlay_includes", False):
+                    return False
+                siblings = [bytes.fromhex(x) for x in s["inclusion_proof"]["siblings"]]
+                if not InclusionProof(key=doc_hash, siblings=siblings).verify(smt_root):
+                    return False
+            else:
                 return False
         return True
 

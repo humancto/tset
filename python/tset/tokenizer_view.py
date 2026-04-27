@@ -71,19 +71,17 @@ def build_view(
     next_sparse_at = 0
 
     pending = np.empty(0, dtype=TOKEN_DTYPE)
-    pending_chunk_doc_offsets: list[tuple[int, int, int]] = []
     total_tokens = 0
     cursor_in_view = VIEW_HEADER_SIZE
 
     def flush_chunk():
-        nonlocal pending, pending_chunk_doc_offsets, cursor_in_view
+        nonlocal pending, cursor_in_view
         if pending.size == 0:
             return
         if (pending >= tokenizer.vocab_size).any():
             raise ValueError("tokenizer emitted ID >= vocab_size")
         raw = pending.astype(TOKEN_DTYPE).tobytes()
         compressed = compressor.compress(raw)
-        chunk_id = len(chunks)
         chunk_payload = (
             struct.pack(
                 "<QQQ",
@@ -103,7 +101,6 @@ def build_view(
         chunk_payloads.append(chunk_payload)
         cursor_in_view += CHUNK_HEADER_SIZE + len(compressed)
         pending = np.empty(0, dtype=TOKEN_DTYPE)
-        pending_chunk_doc_offsets = []
 
     for doc_hash, content in documents:
         ids = tokenizer.encode(content).astype(TOKEN_DTYPE, copy=False)
@@ -169,7 +166,12 @@ def build_view(
     )
 
 
-def read_chunk(mm, view_offset: int, chunk: ChunkInfo) -> np.ndarray:
+def read_chunk(
+    mm,
+    view_offset: int,
+    chunk: ChunkInfo,
+    vocab_size: int | None = None,
+) -> np.ndarray:
     abs_offset = view_offset + chunk.byte_offset_in_view
     header = bytes(mm[abs_offset : abs_offset + CHUNK_HEADER_SIZE])
     uncompressed_size, compressed_size, num_tokens = struct.unpack("<QQQ", header)
@@ -185,13 +187,36 @@ def read_chunk(mm, view_offset: int, chunk: ChunkInfo) -> np.ndarray:
     raw = zstd.ZstdDecompressor().decompress(payload, max_output_size=uncompressed_size)
     if len(raw) != uncompressed_size:
         raise ValueError("chunk decompressed size mismatch")
-    return np.frombuffer(raw, dtype=TOKEN_DTYPE)
+    arr = np.frombuffer(raw, dtype=TOKEN_DTYPE)
+    if vocab_size is not None and arr.size and int(arr.max()) >= vocab_size:
+        raise ValueError(
+            f"chunk contains token id >= vocab_size ({int(arr.max())} >= {vocab_size})"
+        )
+    return arr
 
 
-def verify_view_header(mm, view_offset: int, expected_config_hash: bytes) -> None:
+def verify_view_header(
+    mm,
+    view_offset: int,
+    expected_config_hash: bytes,
+    expected_total_tokens: int | None = None,
+    expected_num_chunks: int | None = None,
+) -> None:
     magic = bytes(mm[view_offset : view_offset + 4])
     if magic != MAGIC_VIEW:
         raise ValueError(f"bad view magic at offset {view_offset}: {magic!r}")
     config_hash = bytes(mm[view_offset + 4 : view_offset + 4 + 32])
     if config_hash != expected_config_hash:
         raise ValueError("view config_hash on disk disagrees with manifest")
+    total_on_disk = struct.unpack_from("<Q", mm, view_offset + 36)[0]
+    chunks_on_disk = struct.unpack_from("<Q", mm, view_offset + 44)[0]
+    if expected_total_tokens is not None and total_on_disk != expected_total_tokens:
+        raise ValueError(
+            f"view total_tokens on disk ({total_on_disk}) differs from manifest"
+            f" ({expected_total_tokens})"
+        )
+    if expected_num_chunks is not None and chunks_on_disk != expected_num_chunks:
+        raise ValueError(
+            f"view num_chunks on disk ({chunks_on_disk}) differs from manifest"
+            f" ({expected_num_chunks})"
+        )

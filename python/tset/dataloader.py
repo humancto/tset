@@ -74,12 +74,11 @@ class DataLoader:
         self.num_workers = num_workers
         self.drop_last = drop_last
 
-    def _partition_index(self, n: int) -> int:
-        # Combine rank+worker into a global slot and round-robin
+    def _slot(self) -> int:
         return self.rank * self.num_workers + self.worker_id
 
     def __iter__(self) -> Iterator[BatchT]:
-        slot = self._partition_index(self.batch_size)
+        slot = self._slot()
         modulus = self.world_size * self.num_workers
         if self.shuffle:
             seed = _derive_seed(self.epoch_seed, self.rank, self.worker_id)

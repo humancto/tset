@@ -10,7 +10,6 @@ predicate-driven document filtering for benchmarks D and the mixture sampler.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -134,7 +133,5 @@ def _infer_type(v: Any) -> str:
     if isinstance(v, int):
         return "int"
     if isinstance(v, float):
-        if math.isnan(v) or math.isinf(v):
-            return "float"
         return "float"
     return "string"

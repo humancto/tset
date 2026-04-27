@@ -28,11 +28,11 @@ from tset.tokenizer_view import (
     read_chunk,
     verify_view_header,
 )
-from tset.tokenizers import Tokenizer, get_tokenizer, verify_reproducibility
+from tset.tokenizers import Tokenizer, get_tokenizer_class, verify_reproducibility
 
 
 class Reader:
-    def __init__(self, path: str, verify: bool = True):
+    def __init__(self, path: str):
         self.path = path
         self._file = open(path, "rb")
         self._mm = mmap.mmap(self._file.fileno(), 0, access=mmap.ACCESS_READ)
@@ -74,8 +74,7 @@ class Reader:
             for h, v in M.manifest_get_doc_index(self.manifest).items()
         }
         self._docs = DocumentStoreReader(self._mm, self._blocks, self._index)
-        if verify:
-            self._verify_invariants()
+        self._verify_invariants()
 
     def _verify_invariants(self) -> None:
         merkle = shard_merkle_root(list(self._index.keys()))
@@ -88,6 +87,8 @@ class Reader:
             log = AuditLog.from_dict(self.manifest["audit_log"])
             if not log.verify():
                 raise ValueError("audit log integrity check failed")
+        for tid in self.tokenizer_ids():
+            self.verify_tokenizer_view(tid)
 
     def close(self) -> None:
         try:
@@ -111,11 +112,11 @@ class Reader:
         return self._docs.get(doc_hash)
 
     def documents(self) -> Iterator[tuple[bytes, bytes]]:
-        for h in self._doc_order_hex():
+        for h in self.doc_order_hex():
             hb = bytes.fromhex(h)
             yield hb, self.get_document(hb)
 
-    def _doc_order_hex(self) -> list[str]:
+    def doc_order_hex(self) -> list[str]:
         # v0.1: order is determined by source_map of first view if present,
         # else by manifest insertion order which JSON dump preserves.
         views = M.manifest_views(self.manifest)
@@ -138,13 +139,16 @@ class Reader:
         view_offset = view["view_offset"]
         chunks = view["chunks"]
         source_map = view["source_map"]
+        vocab_size = view["vocab_size"]
         chunk_arrays: dict[int, np.ndarray] = {}
 
         def chunk_arr(idx: int) -> np.ndarray:
             cached = chunk_arrays.get(idx)
             if cached is not None:
                 return cached
-            arr = read_chunk(self._mm, view_offset, ChunkInfo(**chunks[idx]))
+            arr = read_chunk(
+                self._mm, view_offset, ChunkInfo(**chunks[idx]), vocab_size=vocab_size
+            )
             chunk_arrays[idx] = arr
             return arr
 
@@ -155,6 +159,8 @@ class Reader:
             cum += c["num_tokens"]
 
         def read_range(token_offset: int, count: int) -> np.ndarray:
+            if count <= 0:
+                return np.empty(0, dtype=np.uint32)
             pieces: list[np.ndarray] = []
             cur = token_offset
             remaining = count
@@ -184,18 +190,20 @@ class Reader:
         if tokenizer_id not in views:
             raise KeyError(f"no such tokenization view: {tokenizer_id!r}")
         view = views[tokenizer_id]
-        verify_view_header(self._mm, view["view_offset"], bytes.fromhex(view["config_hash"]))
+        verify_view_header(
+            self._mm,
+            view["view_offset"],
+            bytes.fromhex(view["config_hash"]),
+            expected_total_tokens=view["total_tokens"],
+            expected_num_chunks=len(view["chunks"]),
+        )
         return view
 
     def verify_tokenizer_view(self, tokenizer_id: str, tokenizer: Tokenizer | None = None) -> None:
         view = self._open_view(tokenizer_id)
         if tokenizer is None:
-            cfg = view["tokenizer_config"]
-            ctor_kwargs = {k: v for k, v in cfg.items() if k != "id" and k != "kind"}
-            try:
-                tokenizer = get_tokenizer(tokenizer_id, **ctor_kwargs)
-            except TypeError:
-                tokenizer = get_tokenizer(tokenizer_id)
+            cls = get_tokenizer_class(tokenizer_id)
+            tokenizer = cls.from_config(view["tokenizer_config"])
         if tokenizer.config_hash() != bytes.fromhex(view["config_hash"]):
             raise ValueError(
                 f"tokenizer config hash mismatch for {tokenizer_id!r}"
@@ -229,7 +237,10 @@ class Reader:
         return proof
 
     def smt_root(self) -> bytes:
-        return bytes.fromhex(self.manifest.get("smt_root", "")) if self.manifest.get("smt_root") else self.smt().root()
+        root_hex = self.manifest.get("smt_root", "")
+        if root_hex:
+            return bytes.fromhex(root_hex)
+        return self.smt().root()
 
     def metadata_columns(self) -> MetadataColumns:
         return MetadataColumns.from_dict(self.manifest.get("metadata_columns", {}))

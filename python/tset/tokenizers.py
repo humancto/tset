@@ -27,6 +27,10 @@ class Tokenizer(ABC):
         canonical = json.dumps(self.config(), sort_keys=True, separators=(",", ":"))
         return hash_bytes(canonical.encode("utf-8"))
 
+    @classmethod
+    def from_config(cls, cfg: dict) -> "Tokenizer":
+        return cls()
+
 
 class ByteLevelTokenizer(Tokenizer):
     tokenizer_id = "byte-level-v1"
@@ -80,6 +84,10 @@ class WhitespaceTokenizer(Tokenizer):
             "kind": "whitespace-hashed",
         }
 
+    @classmethod
+    def from_config(cls, cfg: dict) -> "WhitespaceTokenizer":
+        return cls(vocab_size=int(cfg["vocab_size"]))
+
 
 _REGISTRY: dict[str, type[Tokenizer]] = {
     ByteLevelTokenizer.tokenizer_id: ByteLevelTokenizer,
@@ -88,9 +96,13 @@ _REGISTRY: dict[str, type[Tokenizer]] = {
 
 
 def get_tokenizer(tokenizer_id: str, **kwargs) -> Tokenizer:
+    return get_tokenizer_class(tokenizer_id)(**kwargs)
+
+
+def get_tokenizer_class(tokenizer_id: str) -> type[Tokenizer]:
     if tokenizer_id not in _REGISTRY:
         raise KeyError(f"unknown tokenizer_id: {tokenizer_id!r}")
-    return _REGISTRY[tokenizer_id](**kwargs)
+    return _REGISTRY[tokenizer_id]
 
 
 def register_tokenizer(cls: type[Tokenizer]) -> type[Tokenizer]:

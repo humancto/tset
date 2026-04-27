@@ -50,6 +50,8 @@ class Header:
                 f"this reader supports up to {VERSION_MAJOR}.{VERSION_MINOR}"
             )
         flags = struct.unpack_from("<I", data, 8)[0]
+        if flags != 0:
+            raise ValueError(f"unexpected header flags: 0x{flags:08x} (must be 0 in v0.1)")
         manifest_offset = struct.unpack_from("<Q", data, 16)[0]
         manifest_size = struct.unpack_from("<Q", data, 24)[0]
         return cls(

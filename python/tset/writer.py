@@ -70,14 +70,20 @@ class Writer:
         content: bytes | str,
         metadata: dict[str, Any] | None = None,
     ) -> bytes:
+        if self._views:
+            raise RuntimeError(
+                "add_document() called after add_tokenizer_view(); add all"
+                " documents before registering any tokenization view"
+            )
         if isinstance(content, str):
             content = content.encode("utf-8")
         h = self._docs.add(content)
-        if h not in self._doc_contents:
-            self._doc_order.append(h)
-            self._doc_contents[h] = content
-            self._smt.insert(h)
-            self._audit.append("ingestion", {"doc_hash": h.hex(), "size": len(content)})
+        if h in self._doc_contents:
+            return h
+        self._doc_order.append(h)
+        self._doc_contents[h] = content
+        self._smt.insert(h)
+        self._audit.append("ingestion", {"doc_hash": h.hex(), "size": len(content)})
         self._columns.add_row(metadata or {})
         return h
 
@@ -240,7 +246,7 @@ def append_tokenizer_view(path: str, tokenizer: Tokenizer) -> None:
             raise ValueError(
                 f"tokenizer_id {tokenizer.tokenizer_id!r} already present in shard"
             )
-        ordered_docs = [(bytes.fromhex(h), r.get_document(bytes.fromhex(h))) for h in r._doc_order_hex()]
+        ordered_docs = [(bytes.fromhex(h), r.get_document(bytes.fromhex(h))) for h in r.doc_order_hex()]
 
     view = build_view(tokenizer, ordered_docs)
 
