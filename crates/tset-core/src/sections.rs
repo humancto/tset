@@ -319,3 +319,126 @@ mod tlog_tests {
         assert!(decode_tlog_section(&bytes).is_err());
     }
 }
+
+// ---------------------------------------------------------------------
+// TCOL — on-disk metadata columns section
+// ---------------------------------------------------------------------
+
+use crate::constants::MAGIC_COLUMNS;
+
+/// On-disk metadata columns section (`TCOL`):
+///
+/// ```text
+/// [0:4]    magic         = b"TCOL"
+/// [4:5]    cols_version  = u8 (1 = json-payload)
+/// [5:8]    reserved      = zeros
+/// [8:16]   payload_size  = u64 LE
+/// [16:24]  row_count     = u64 LE
+/// [24:56]  content_hash  = BLAKE3 over the JSON payload
+/// [56..56+payload_size]  = canonical JSON {types, columns}
+/// ```
+///
+/// v1 keeps the columnar values in the JSON payload to match the
+/// in-manifest form. A future cols_version=2 can switch to a true
+/// columnar binary layout (per-column array, dictionary encoding,
+/// chunk statistics) without breaking older readers.
+pub const TCOL_VERSION: u8 = 1;
+pub const TCOL_HEADER_SIZE: usize = 56;
+
+pub fn encode_tcol_section(columns_json: &Value, row_count: u64) -> Vec<u8> {
+    let canon = crate::tokenizers::canonical_json(columns_json);
+    let payload = canon.into_bytes();
+    let content_hash = hash_bytes(&payload);
+
+    let mut out = Vec::with_capacity(TCOL_HEADER_SIZE + payload.len());
+    out.extend_from_slice(MAGIC_COLUMNS);
+    out.push(TCOL_VERSION);
+    out.extend_from_slice(&[0u8; 3]);
+    out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    out.extend_from_slice(&row_count.to_le_bytes());
+    out.extend_from_slice(&content_hash);
+    out.extend_from_slice(&payload);
+    out
+}
+
+pub struct TcolSection {
+    pub cols_version: u8,
+    pub row_count: u64,
+    pub content_hash: Hash,
+    pub columns_json: Value,
+}
+
+pub fn decode_tcol_section(bytes: &[u8]) -> TsetResult<TcolSection> {
+    if bytes.len() < TCOL_HEADER_SIZE {
+        return Err(TsetError::BadManifest("TCOL section truncated"));
+    }
+    let mut magic = [0u8; 4];
+    magic.copy_from_slice(&bytes[0..4]);
+    if &magic != MAGIC_COLUMNS {
+        return Err(TsetError::BadManifest("TCOL bad magic"));
+    }
+    let cols_version = bytes[4];
+    if cols_version != TCOL_VERSION {
+        return Err(TsetError::BadManifest("TCOL unsupported cols_version"));
+    }
+    let payload_size = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
+    let row_count = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+    let mut content_hash = [0u8; HASH_SIZE];
+    content_hash.copy_from_slice(&bytes[24..56]);
+    let payload_end = TCOL_HEADER_SIZE
+        .checked_add(payload_size)
+        .ok_or(TsetError::BadManifest("TCOL payload range overflow"))?;
+    if payload_end > bytes.len() {
+        return Err(TsetError::BadManifest("TCOL payload exceeds section"));
+    }
+    let payload = &bytes[TCOL_HEADER_SIZE..payload_end];
+    if hash_bytes(payload) != content_hash {
+        return Err(TsetError::BadManifest("TCOL content_hash mismatch"));
+    }
+    let columns_json: Value = serde_json::from_slice(payload)?;
+    Ok(TcolSection {
+        cols_version,
+        row_count,
+        content_hash,
+        columns_json,
+    })
+}
+
+#[cfg(test)]
+mod tcol_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn round_trip_empty() {
+        let cols = json!({"types": {}, "columns": {}});
+        let bytes = encode_tcol_section(&cols, 0);
+        let dec = decode_tcol_section(&bytes).unwrap();
+        assert_eq!(dec.row_count, 0);
+        assert_eq!(dec.columns_json, cols);
+    }
+
+    #[test]
+    fn round_trip_with_columns() {
+        let cols = json!({
+            "types": {"lang": "string", "score": "float"},
+            "columns": {
+                "lang": ["en", "fr", "en"],
+                "score": [0.9, 0.4, 0.7],
+            },
+        });
+        let bytes = encode_tcol_section(&cols, 3);
+        let dec = decode_tcol_section(&bytes).unwrap();
+        assert_eq!(dec.row_count, 3);
+        assert_eq!(dec.columns_json, cols);
+    }
+
+    #[test]
+    fn rejects_tampered_payload() {
+        let cols = json!({"types": {}, "columns": {}});
+        let mut bytes = encode_tcol_section(&cols, 0);
+        let n = bytes.len();
+        bytes[n - 1] ^= 0xff;
+        assert!(decode_tcol_section(&bytes).is_err());
+    }
+}
