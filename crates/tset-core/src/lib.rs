@@ -60,6 +60,7 @@ pub mod signing;
 pub mod columns;
 pub mod mixture;
 pub mod object_store;
+pub mod sections;
 pub mod reader;
 pub mod writer;
 pub mod dataset;
