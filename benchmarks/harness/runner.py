@@ -145,9 +145,15 @@ def benchmark_tokenizer_swap(records: list[CorpusRecord]) -> dict:
 
 
 def benchmark_streaming(records: list[CorpusRecord]) -> dict:
-    """Benchmark B (lite): tokens/sec consumed by a single-process reader.
-    Real Benchmark B requires multi-node S3 streaming; this is the pure-Python
-    upper bound on how fast TSET can feed a consumer."""
+    """Benchmark B (lite): tokens/sec for a single-process consumer.
+
+    Times three readers back-to-back on the same shard so the deltas are
+    apples-to-apples:
+      - Python reader (TSET_PREFER_RUST=0)
+      - Rust-backed reader via the Python adapter (TSET_PREFER_RUST=1, default)
+      - np.fromfile of a raw uint32 .bin (the unrealistic upper bound)
+    Real Benchmark B is multi-node S3 — that's a v0.3+ harness item.
+    """
     tset_path = os.path.join(CORPUS_DIR, "stream.tset")
     raw_path = os.path.join(CORPUS_DIR, "stream.bin")
     _write_tset(records, tset_path)
@@ -155,13 +161,36 @@ def benchmark_streaming(records: list[CorpusRecord]) -> dict:
 
     import numpy as np
 
-    t0 = time.perf_counter()
-    total = 0
-    with Reader(tset_path) as r:
-        for batch, _ in r.stream_tokens("byte-level-v1", batch_size=4096):
-            total += int(batch.size)
-    tset_seconds = time.perf_counter() - t0
-    tset_tps = total / tset_seconds if tset_seconds else 0
+    def _time_reader(use_rust: bool) -> tuple[float, int]:
+        prev = os.environ.get("TSET_PREFER_RUST")
+        os.environ["TSET_PREFER_RUST"] = "1" if use_rust else "0"
+        try:
+            t0 = time.perf_counter()
+            total = 0
+            with Reader(tset_path) as r:
+                for batch, _ in r.stream_tokens("byte-level-v1", batch_size=4096):
+                    total += int(batch.size)
+            return time.perf_counter() - t0, total
+        finally:
+            if prev is None:
+                os.environ.pop("TSET_PREFER_RUST", None)
+            else:
+                os.environ["TSET_PREFER_RUST"] = prev
+
+    py_seconds, py_total = _time_reader(use_rust=False)
+    py_tps = py_total / py_seconds if py_seconds else 0
+
+    rust_available = False
+    rust_tps: float | None = None
+    rust_seconds: float | None = None
+    try:
+        import tset_rs  # noqa: F401
+
+        rust_available = True
+        rust_seconds, rust_total = _time_reader(use_rust=True)
+        rust_tps = rust_total / rust_seconds if rust_seconds else 0
+    except ImportError:
+        pass
 
     t0 = time.perf_counter()
     arr = np.fromfile(raw_path, dtype=np.uint32)
@@ -169,15 +198,32 @@ def benchmark_streaming(records: list[CorpusRecord]) -> dict:
     bins_seconds = time.perf_counter() - t0
     raw_tps = n / bins_seconds if bins_seconds else 0
 
-    return {
+    out: dict[str, object] = {
         "benchmark": "B_streaming_lite",
-        "tset_tokens_per_sec": int(tset_tps),
+        "py_reader_tokens_per_sec": int(py_tps),
+        "py_reader_seconds": round(py_seconds, 4),
         "raw_bin_tokens_per_sec": int(raw_tps),
-        "tset_pct_of_raw": round(tset_tps / raw_tps, 4) if raw_tps else None,
+        "py_pct_of_raw": round(py_tps / raw_tps, 4) if raw_tps else None,
         "v02_target_pct": 0.7,
         "v1_target_pct": 0.85,
-        "note": "single-process Python; full Benchmark B requires multi-node S3",
+        "note": (
+            "single-process; full Benchmark B requires multi-node S3. "
+            "Both readers run back-to-back in one process so the second "
+            "benefits from a warm OS page cache; treat the rust/py ratio "
+            "as a lower bound on the real cold-cache speedup."
+        ),
     }
+    if rust_available and rust_tps is not None:
+        out["rust_reader_tokens_per_sec"] = int(rust_tps)
+        out["rust_reader_seconds"] = round(rust_seconds or 0.0, 4)
+        out["rust_pct_of_raw"] = round(rust_tps / raw_tps, 4) if raw_tps else None
+        out["rust_speedup_over_py"] = (
+            round(rust_tps / py_tps, 2) if py_tps else None
+        )
+    else:
+        out["rust_reader_tokens_per_sec"] = None
+        out["note"] += " — tset_rs not installed; rust path skipped"
+    return out
 
 
 def benchmark_compliance(records: list[CorpusRecord]) -> dict:
