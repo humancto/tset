@@ -1,0 +1,23 @@
+[package]
+name = "tset-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tset-core = { path = "../crates/tset-core" }
+tempfile = "3"
+
+# Required by cargo-fuzz convention. Each target is a separate bin.
+[[bin]]
+name = "reader_open"
+path = "fuzz_targets/reader_open.rs"
+test = false
+doc = false
+bench = false
+
+# Run with: cargo +nightly fuzz run reader_open
