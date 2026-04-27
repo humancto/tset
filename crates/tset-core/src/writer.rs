@@ -508,3 +508,218 @@ fn decompress_block_from_body(body: &[u8], body_offset: u64, block: &BlockInfo) 
     }
     Ok(raw)
 }
+
+/// Append a new tokenization view to an existing TSET shard, in-place.
+///
+/// Per SPEC §7: existing views and document blocks aren't modified. Only
+/// the manifest is rewritten; the file is truncated to the original
+/// `manifest_offset`, the new view is appended at that offset, the new
+/// manifest follows, and header + footer are rewritten. The previous
+/// manifest bytes are gone (truncate); a future `tset compact` could
+/// preserve them as time-travel snapshots.
+///
+/// Mirrors `tset.writer.append_tokenizer_view` (Python).
+pub fn append_tokenizer_view<P: AsRef<Path>>(
+    path: P,
+    tokenizer: Box<dyn Tokenizer>,
+) -> TsetResult<()> {
+    use crate::reader::Reader as CoreReader;
+    use std::io::{Seek, SeekFrom};
+
+    let path: PathBuf = path.as_ref().to_path_buf();
+
+    // Read existing shard state (manifest, doc list, ordered docs).
+    let (mut manifest, ordered_docs, old_manifest_offset, header_v_minor) = {
+        let r = CoreReader::open(&path)?;
+        if r.tokenizer_ids()?.iter().any(|t| t == tokenizer.tokenizer_id()) {
+            return Err(TsetError::BadManifest(
+                "tokenizer_id already present in shard",
+            ));
+        }
+        let manifest_value: Value = r.manifest().raw().clone();
+        let manifest_obj = manifest_value
+            .as_object()
+            .ok_or(TsetError::BadManifest("manifest is not an object"))?
+            .clone();
+        // Re-read docs in their canonical order. Using doc_index keys
+        // (which after JSON-sort-keys are alphabetized) keeps the order
+        // independent of how the original writer added them — same as the
+        // shard_merkle_root invariant.
+        let order: Vec<Hash> = r.doc_hashes().copied().collect();
+        let mut docs: Vec<(Hash, Vec<u8>)> = Vec::with_capacity(order.len());
+        for h in &order {
+            let bytes = r.get_document(h)?;
+            docs.push((*h, bytes));
+        }
+        (
+            manifest_obj,
+            docs,
+            r.header.manifest_offset,
+            r.header.version_minor,
+        )
+    };
+
+    // Build the view
+    let mut builds = build_view(
+        tokenizer.as_ref(),
+        &ordered_docs,
+        DEFAULT_TOKEN_CHUNK_SIZE,
+        DEFAULT_SPARSE_INDEX_INTERVAL,
+    )?;
+    let v = builds.remove(0);
+
+    // Truncate to old manifest_offset, then write [view][manifest][footer]
+    let mut f = OpenOptions::new().write(true).read(true).open(&path)?;
+    f.set_len(old_manifest_offset)?;
+    f.seek(SeekFrom::Start(old_manifest_offset))?;
+    let view_offset = old_manifest_offset;
+    f.write_all(&v.encoded)?;
+
+    // Manifest patches: add the view + append a tokenizer_added audit entry
+    let chunks_json: Vec<Value> = v
+        .chunks
+        .iter()
+        .map(|c| {
+            json!({
+                "byte_offset_in_view": c.byte_offset_in_view,
+                "compressed_size": c.compressed_size,
+                "num_tokens": c.num_tokens,
+                "content_hash": c.content_hash.map(|h| hex::encode(h)),
+            })
+        })
+        .collect();
+    let source_map_json: Vec<Value> = v
+        .source_map
+        .iter()
+        .map(|s| {
+            json!({
+                "doc_hash": hex::encode(s.doc_hash),
+                "token_offset": s.token_offset,
+                "token_count": s.token_count,
+            })
+        })
+        .collect();
+    let sparse_json: Vec<Value> = v
+        .sparse_offset_index
+        .iter()
+        .map(|e| {
+            json!({
+                "token_offset": e.token_offset,
+                "chunk_id": e.chunk_id,
+                "in_chunk_offset": e.in_chunk_offset,
+            })
+        })
+        .collect();
+    let entry = json!({
+        "view_offset": view_offset,
+        "view_size": v.encoded.len() as u64,
+        "vocab_size": v.vocab_size,
+        "tokenizer_config": v.tokenizer_config,
+        "config_hash": hex::encode(v.config_hash),
+        "total_tokens": v.total_tokens,
+        "bits_per_token": v.bits_per_token,
+        "chunks": chunks_json,
+        "source_map": source_map_json,
+        "sparse_offset_index": sparse_json,
+        "test_vector": v.test_vector,
+    });
+    let views = manifest
+        .get_mut("tokenization_views")
+        .and_then(Value::as_object_mut)
+        .ok_or(TsetError::BadManifest("manifest.tokenization_views"))?;
+    views.insert(tokenizer.tokenizer_id().to_string(), entry);
+
+    // Append tokenizer_added audit entry — preserves the existing log.
+    let mut audit = AuditLog::new();
+    if let Some(audit_v) = manifest.get("audit_log") {
+        if let Some(arr) = audit_v.get("entries").and_then(Value::as_array) {
+            for e in arr {
+                let signature = e
+                    .get("signature")
+                    .and_then(Value::as_str)
+                    .map(String::from);
+                audit.entries.push(crate::audit_log::AuditEntry {
+                    seq: e.get("seq").and_then(Value::as_u64).unwrap_or(0),
+                    timestamp: e.get("timestamp").and_then(Value::as_f64).unwrap_or(0.0),
+                    event_type: e
+                        .get("event_type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    payload: e.get("payload").cloned().unwrap_or(Value::Null),
+                    prev_root: e
+                        .get("prev_root")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    entry_hash: e
+                        .get("entry_hash")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    chained_root: e
+                        .get("chained_root")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    signature,
+                });
+            }
+            audit.log_root = audit_v
+                .get("log_root")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+        }
+    }
+    audit.append(
+        "tokenizer_added",
+        json!({
+            "tokenizer_id": tokenizer.tokenizer_id(),
+            "config_hash": hex::encode(v.config_hash),
+            "total_tokens": v.total_tokens,
+        }),
+        current_timestamp(),
+    );
+    manifest.insert("audit_log".into(), audit.to_json());
+
+    let manifest_value = Value::Object(manifest);
+    let manifest_bytes = canonical_json(&manifest_value).into_bytes();
+    let manifest_hash = hash_bytes(&manifest_bytes);
+    let manifest_offset = f.stream_position()?;
+    let manifest_size = manifest_bytes.len() as u64;
+    f.write_all(&manifest_bytes)?;
+
+    // Read existing shard_merkle_root from the new manifest's body
+    let merkle_hex = manifest_value
+        .get("shard_merkle_root")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let mut shard_merkle_root = [0u8; HASH_SIZE];
+    if let Ok(b) = hex::decode(merkle_hex) {
+        if b.len() == HASH_SIZE {
+            shard_merkle_root.copy_from_slice(&b);
+        }
+    }
+
+    let new_header = Header {
+        version_major: VERSION_MAJOR,
+        version_minor: header_v_minor,
+        flags: 0,
+        manifest_offset,
+        manifest_size,
+        shard_merkle_root,
+        manifest_hash,
+    };
+    let mut hash28 = [0u8; TRUNCATED_HASH_SIZE];
+    hash28.copy_from_slice(&manifest_hash[..TRUNCATED_HASH_SIZE]);
+    let new_footer = Footer {
+        manifest_size,
+        manifest_hash28: hash28,
+    };
+    f.write_all(&new_footer.encode())?;
+    f.seek(SeekFrom::Start(0))?;
+    f.write_all(&new_header.encode())?;
+    f.sync_all()?;
+    Ok(())
+}

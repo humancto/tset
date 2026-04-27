@@ -12,7 +12,7 @@ use tset_core::dataset::{Dataset as CoreDataset, DatasetWriter as CoreDatasetWri
 use tset_core::reader::Reader as CoreReader;
 use tset_core::signing::{AuditSigner, verify_signature};
 use tset_core::tokenizers::{ByteLevelTokenizer, Tokenizer, WhitespaceTokenizer};
-use tset_core::writer::Writer as CoreWriter;
+use tset_core::writer::{append_tokenizer_view as core_append_tokenizer_view, Writer as CoreWriter};
 use tset_core::TsetError;
 
 fn map_err(e: TsetError) -> PyErr {
@@ -550,6 +550,24 @@ fn verify_audit_signature(
     verify_signature(public_key, message, signature)
 }
 
+/// Append a new tokenization view to an existing TSET shard, in-place.
+/// Mirrors `tset.writer.append_tokenizer_view` (Python).
+#[pyfunction]
+fn append_tokenizer_view(path: &str, tokenizer_id: &str, vocab_size: u32) -> PyResult<()> {
+    let tok: Box<dyn Tokenizer> = match tokenizer_id {
+        ByteLevelTokenizer::ID => Box::new(ByteLevelTokenizer),
+        WhitespaceTokenizer::ID => Box::new(
+            WhitespaceTokenizer::new(vocab_size).map_err(map_err)?,
+        ),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown tokenizer_id: {other}"
+            )))
+        }
+    };
+    core_append_tokenizer_view(path, tok).map_err(map_err)
+}
+
 #[pymodule]
 fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyReader>()?;
@@ -561,6 +579,7 @@ fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_signing_key, m)?)?;
     m.add_function(wrap_pyfunction!(signing_public_key, m)?)?;
     m.add_function(wrap_pyfunction!(verify_audit_signature, m)?)?;
+    m.add_function(wrap_pyfunction!(append_tokenizer_view, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
