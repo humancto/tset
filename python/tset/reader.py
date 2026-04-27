@@ -126,49 +126,58 @@ class Reader:
 
     def stream_tokens(
         self, tokenizer_id: str, batch_size: int = 1024
-    ) -> Iterator[tuple[np.ndarray, bytes | None]]:
-        """Stream `batch_size` token windows. Yields (tokens, doc_hash) where
-        `doc_hash` is the source document hash if the entire batch lies inside
-        one document; otherwise None."""
-        view = self._open_view(tokenizer_id)
-        chunks = view["chunks"]
-        view_offset = view["view_offset"]
-        source_map = view["source_map"]
-        sm_idx = 0
-        sm_consumed = 0
-        global_offset = 0
-        for chunk_meta in chunks:
-            arr = read_chunk(self._mm, view_offset, ChunkInfo(**chunk_meta))
-            cursor = 0
-            while cursor < arr.size:
-                take = min(batch_size, arr.size - cursor)
-                batch = arr[cursor : cursor + take]
-                doc_hash = self._dominant_doc(source_map, global_offset + cursor, take)
-                yield batch, doc_hash
-                cursor += take
-            global_offset += int(arr.size)
+    ) -> Iterator[tuple[np.ndarray, bytes]]:
+        """Stream tokens grouped per source document.
 
-    def _dominant_doc(
-        self, source_map: list[dict], start: int, count: int
-    ) -> bytes | None:
-        end = start + count
-        which: bytes | None = None
+        Yields ``(tokens, doc_hash)`` where ``tokens`` is at most
+        ``batch_size`` long and entirely belongs to ``doc_hash``. Iterating
+        per-document lets dataset-level exclusion overlays drop tokens
+        without leaking partial document content across batch boundaries.
+        """
+        view = self._open_view(tokenizer_id)
+        view_offset = view["view_offset"]
+        chunks = view["chunks"]
+        source_map = view["source_map"]
+        chunk_arrays: dict[int, np.ndarray] = {}
+
+        def chunk_arr(idx: int) -> np.ndarray:
+            cached = chunk_arrays.get(idx)
+            if cached is not None:
+                return cached
+            arr = read_chunk(self._mm, view_offset, ChunkInfo(**chunks[idx]))
+            chunk_arrays[idx] = arr
+            return arr
+
+        chunk_starts: list[int] = []
+        cum = 0
+        for c in chunks:
+            chunk_starts.append(cum)
+            cum += c["num_tokens"]
+
+        def read_range(token_offset: int, count: int) -> np.ndarray:
+            pieces: list[np.ndarray] = []
+            cur = token_offset
+            remaining = count
+            cid = 0
+            while cid + 1 < len(chunk_starts) and chunk_starts[cid + 1] <= cur:
+                cid += 1
+            while remaining > 0:
+                arr = chunk_arr(cid)
+                offset = cur - chunk_starts[cid]
+                take = min(arr.size - offset, remaining)
+                pieces.append(arr[offset : offset + take])
+                cur += take
+                remaining -= take
+                cid += 1
+            return pieces[0] if len(pieces) == 1 else np.concatenate(pieces)
+
         for entry in source_map:
-            es = entry["token_offset"]
-            ec = entry["token_count"]
-            ee = es + ec
-            if ee <= start:
+            doc_hash = bytes.fromhex(entry["doc_hash"])
+            tokens = read_range(entry["token_offset"], entry["token_count"])
+            if tokens.size == 0:
                 continue
-            if es >= end:
-                break
-            overlap_start = max(es, start)
-            overlap_end = min(ee, end)
-            if overlap_start < overlap_end:
-                if which is None:
-                    which = bytes.fromhex(entry["doc_hash"])
-                else:
-                    return None
-        return which
+            for i in range(0, int(tokens.size), batch_size):
+                yield tokens[i : i + batch_size], doc_hash
 
     def _open_view(self, tokenizer_id: str) -> dict:
         views = M.manifest_views(self.manifest)

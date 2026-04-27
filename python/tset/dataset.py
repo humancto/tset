@@ -119,7 +119,7 @@ class Dataset:
                 if tokenizer_id not in r.tokenizer_ids():
                     continue
                 for batch, doc_hash in r.stream_tokens(tokenizer_id, batch_size):
-                    if doc_hash is not None and doc_hash.hex() in self._exclusions:
+                    if doc_hash.hex() in self._exclusions:
                         continue
                     yield batch, doc_hash
 
