@@ -48,13 +48,12 @@ class MetadataColumns:
         self._types[name] = logical_type
 
     def add_row(self, values: dict[str, Any]) -> int:
-        row_idx = self._row_count
-        for col, ls in self._columns.items():
-            ls.append(values.get(col))
         for col, val in values.items():
             if col not in self._columns:
                 self.declare(col, _infer_type(val))
-                self._columns[col][-1] = val
+        row_idx = self._row_count
+        for col, ls in self._columns.items():
+            ls.append(values.get(col))
         self._row_count += 1
         return row_idx
 
