@@ -21,6 +21,25 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+
+def _now_iso() -> str:
+    """Wall-clock ISO timestamp, or `TSET_DETERMINISTIC_CREATED_AT` if set
+    (used by conformance fixture builds to keep manifest_hash byte-stable)."""
+    det = os.environ.get("TSET_DETERMINISTIC_CREATED_AT")
+    if det is not None:
+        return det
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _next_snapshot_id() -> str:
+    """Random 12-hex snapshot ID, or a deterministic counter if
+    `TSET_DETERMINISTIC_SNAPSHOT_ID` is set. The deterministic mode lets
+    conformance fixtures be reproducible across machines + Python runs."""
+    det = os.environ.get("TSET_DETERMINISTIC_SNAPSHOT_ID")
+    if det is not None:
+        return det
+    return uuid.uuid4().hex[:12]
+
 from tset import manifest as M
 from tset.audit_log import AuditLog
 from tset.columns import MetadataColumns
@@ -105,7 +124,7 @@ class Writer:
         self._closed = True
 
         manifest = M.empty_manifest(self.shard_id)
-        manifest["created_at"] = datetime.now(timezone.utc).isoformat()
+        manifest["created_at"] = _now_iso()
 
         body = bytearray()
 
@@ -183,7 +202,7 @@ class Writer:
 
         merkle = shard_merkle_root(self._doc_order)
         smt_root = self._smt.root()
-        snapshot_id = uuid.uuid4().hex[:12]
+        snapshot_id = _next_snapshot_id()
         self._audit.append(
             "version_snapshot",
             {

@@ -42,7 +42,20 @@ class AuditLog:
     def append(self, event_type: EventType, payload: dict) -> AuditEvent:
         seq = len(self.entries)
         prev_root = self.log_root
-        timestamp = time.time()
+        # TSET_DETERMINISTIC_TIME (float seconds since epoch) makes audit
+        # log timestamps reproducible — required for stable conformance
+        # fixtures and any other test that hashes the manifest. Production
+        # writes leave the env var unset and use wall time.
+        import os as _os
+
+        det = _os.environ.get("TSET_DETERMINISTIC_TIME")
+        if det is not None:
+            try:
+                timestamp = float(det)
+            except ValueError:
+                timestamp = time.time()
+        else:
+            timestamp = time.time()
         entry_payload = {
             "seq": seq,
             "timestamp": timestamp,

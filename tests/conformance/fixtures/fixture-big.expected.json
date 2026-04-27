@@ -1,0 +1,15 @@
+{
+  "document_count": 100,
+  "manifest_hash": "a7794aea05931014e8325b6ad941fdd7d5e179d438e2076c85df7339ab0fa415",
+  "manifest_size": 73900,
+  "shard_merkle_root": "c45ddd75e8353b80f6b701c72c158358130947344d7f3fb29f46374be9b78bf1",
+  "tokenization_views": {
+    "byte-level-v1": {
+      "config_hash": "af70cbceee873c00b672eca526bbde6cf4f9e49d936178de5d07e715be05108f",
+      "num_chunks": 1,
+      "total_tokens": 2994,
+      "vocab_size": 256
+    }
+  },
+  "version_minor": 1
+}

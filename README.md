@@ -15,38 +15,126 @@ See [`RFC.md`](RFC.md) for the full design pitch and PRD (v0.4) and
 | Surface             | Status                  |
 |---------------------|-------------------------|
 | RFC                 | v0.4 — public review    |
-| Binary spec         | v0.1                    |
-| Python reference    | v0.1.0                  |
-| Benchmarks          | A, C (Gate 1) + D, E (Gate 2) |
-| Provenance proofs   | SMT inclusion + non-inclusion |
-| Multi-shard dataset | Yes (Gate 2)            |
-| DataLoader          | Pure-Python (Gate 3)    |
+| Binary spec         | v0.2 (frozen body; SMT under review) |
+| Python reference    | v0.2.x                  |
+| Rust core (`tset-core`) | feature-parity for shards + datasets |
+| PyO3 binding (`tset_rs`) | Reader, Writer, Dataset, DatasetWriter |
+| CLI (`tset`)        | inspect, verify, convert jsonl |
+| Benchmarks          | A, C (Gate 1), D, E (Gate 2), B head-to-head Py/Rust (Gate 3); criterion benches in `tset-bench` |
+| Provenance proofs   | SMT inclusion + non-inclusion + dataset overlay binding |
+| Multi-shard dataset | Yes (Python + Rust)     |
+| Converters          | JSONL, Parquet, WebDataset, MDS, HuggingFace |
+| Conformance suite   | Yes — `tests/conformance/` (Python + Rust readers run identical fixtures) |
+| DataLoader          | Pure-Python (deterministic shuffling) |
 
 ## Quickstart
 
 ```bash
+# Python reference impl
 pip install -e python/
 
-# Convert a JSONL corpus into a single-shard .tset file
-python python/examples/jsonl_to_tset.py \
-    --input corpus.jsonl \
-    --output corpus.tset \
-    --tokenizer byte-level
+# Optional: Rust core via PyO3 (gives a 2.87× streaming speedup at 200 MB).
+# Built into the same Python module — `tset.Reader` will delegate to the
+# Rust path automatically when the wheel is installed.
+cd crates/tset-py && maturin build --release && pip install --force-reinstall \
+    ../../target/wheels/tset_rs-*.whl
+```
 
-# Add a second tokenization view in-place (does not re-read source)
-python python/examples/tokenizer_swap_demo.py \
-    --shard corpus.tset \
-    --add-tokenizer whitespace
+### CLI
 
-# Read and stream tokens back
-python -c "
-from tset import Reader
-r = Reader('corpus.tset')
-print('views:', r.tokenizer_ids())
-for tokens, doc_hash in r.stream_tokens('byte-level', batch_size=1024):
-    print(len(tokens), doc_hash[:8])
-    break
-"
+The `tset` binary (in `target/release/tset`) handles the common cases:
+
+```bash
+# Convert JSONL → TSET (byte-level by default)
+tset convert jsonl input.jsonl output.tset
+
+# whitespace-hashed tokenizer with a 1024-vocab
+tset convert jsonl input.jsonl ws.tset --tokenizer=whitespace-hashed-v1 --vocab=1024
+
+# Inspect a shard (header, manifest, views, doc count)
+tset inspect output.tset
+
+# Full integrity check (verifies manifest hash, footer, merkle root,
+# audit log, and reproducibility proof for every view)
+tset verify output.tset
+```
+
+### Python API
+
+```python
+from tset import Reader, Writer
+from tset.tokenizers import ByteLevelTokenizer, WhitespaceTokenizer
+
+# Write
+with Writer("corpus.tset") as w:
+    w.add_document(b"alpha document", metadata={"lang": "en"})
+    w.add_document(b"beta", metadata={"lang": "fr"})
+    w.add_subset("english", "lang = 'en'", default_weight=0.7)
+    w.add_tokenizer_view(ByteLevelTokenizer())
+
+# Add a second tokenization in-place — does NOT re-read source documents
+from tset.writer import append_tokenizer_view
+append_tokenizer_view("corpus.tset", WhitespaceTokenizer(vocab_size=1024))
+
+# Read
+r = Reader("corpus.tset")
+print(r.tokenizer_ids())  # ['byte-level-v1', 'whitespace-hashed-v1']
+for tokens, doc_hash in r.stream_tokens("byte-level-v1", batch_size=1024):
+    pass  # numpy.ndarray of uint32, plus the source doc_hash
+```
+
+### Rust API
+
+```rust
+use tset_core::{Reader, Writer};
+use tset_core::tokenizers::ByteLevelTokenizer;
+
+let mut w = Writer::create("corpus.tset", None);
+w.add_document(b"alpha document")?;
+w.add_tokenizer_view(Box::new(ByteLevelTokenizer))?;
+w.close()?;
+
+let r = Reader::open("corpus.tset")?;
+let view = r.open_view("byte-level-v1")?;
+for (tokens, doc_hash) in view.iter_per_doc()? {
+    // tokens: Vec<u32>, doc_hash: [u8; 32]
+}
+```
+
+### Multi-shard datasets
+
+```python
+from tset.dataset import Dataset, DatasetWriter
+from tset.tokenizers import ByteLevelTokenizer
+
+with DatasetWriter("my-corpus.tset/") as dw:
+    with dw.shard_writer("part-0001") as sw:
+        sw.add_document(b"doc 1")
+        sw.add_tokenizer_view(ByteLevelTokenizer())
+    dw.register_shard("part-0001")
+    # … repeat for additional shards …
+    dw.add_exclusion(b"\x00" * 32, reason="GDPR Art. 17 request")
+
+ds = Dataset("my-corpus.tset/")
+print(ds.dataset_merkle_root().hex())
+for tokens, doc_hash in ds.stream_tokens("byte-level-v1"):
+    pass  # excluded docs are filtered automatically
+```
+
+### Format converters
+
+```python
+from tset.converters import (
+    jsonl_to_tset, parquet_to_tset, webdataset_to_tset,
+    mds_to_tset, to_huggingface_dataset,
+)
+from tset.tokenizers import ByteLevelTokenizer
+
+jsonl_to_tset("input.jsonl", "out.tset", ByteLevelTokenizer(),
+              metadata_fields=["lang", "source"])
+
+webdataset_to_tset("shard.tar", "out.tset", ByteLevelTokenizer())
+# parquet/mds/hf require their respective optional deps installed
 ```
 
 ## Run the benchmarks
