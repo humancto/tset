@@ -1,5 +1,23 @@
 # TSET Binary Layout Specification — v0.2
 
+> **Stability**
+>
+> | Section | Status |
+> |---|---|
+> | §2 Header (4096 B, fixed offset 0) | **frozen** at v0.2 — change requires a major-version bump |
+> | §3 Footer (40 B, fixed at end) | **frozen** at v0.2 |
+> | §4 Document store (zstd content-addressed blocks) | **frozen** at v0.2 |
+> | §5 Tokenization view (incl. per-chunk content_hash, mandatory) | **frozen** at v0.2 |
+> | §6 SMT (Sparse Merkle Tree) | **design under review** — RFC §10 #14–16 cryptographer sign-off pending |
+> | §7 Reader/writer obligations | **frozen** at v0.2 |
+> | §8 Manifest (canonical JSON, sort_keys, separators=(",",":")) | **frozen** at v0.2; protobuf migration is a v0.3 item per RFC §10 #1 |
+> | §9 Out of scope | **frozen** at v0.2 |
+>
+> "Frozen" means the wire format and reader semantics are stable for the
+> v0.2 series. Additive fields are allowed within v0.2 if they are made
+> mandatory by a minor-version bump (v0.2 → v0.3). Breaking changes
+> require a major-version bump (v0.x → v1.0+).
+
 This document is the normative binary-layout spec for TSET. v0.2 is the
 current revision; v0.1 shards remain readable. The high-level
 design rationale lives in [`RFC.md`](RFC.md); this file fixes the bytes.

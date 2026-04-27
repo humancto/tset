@@ -1,0 +1,21 @@
+{
+  "document_count": 3,
+  "manifest_hash": "f2b2a4c03cb5a0b8b4c53be5b6c4c8788b91bf3606b7a564d0af0c00759ed475",
+  "manifest_size": 6125,
+  "shard_merkle_root": "eae739629cf1e18e752c3b1309e0484de575e52c5ba018d179a5170fd39f60bf",
+  "tokenization_views": {
+    "byte-level-v1": {
+      "config_hash": "af70cbceee873c00b672eca526bbde6cf4f9e49d936178de5d07e715be05108f",
+      "num_chunks": 1,
+      "total_tokens": 41,
+      "vocab_size": 256
+    },
+    "whitespace-hashed-v1": {
+      "config_hash": "23fa3a1ca7b09fca6c2f3891c820463ea8a9024fe9ff694d8ac14444d71c5230",
+      "num_chunks": 1,
+      "total_tokens": 11,
+      "vocab_size": 1024
+    }
+  },
+  "version_minor": 1
+}

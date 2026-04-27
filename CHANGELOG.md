@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] — 2026-04-27
+
+PR 6: language-agnostic conformance suite + Writer adapter + spec freeze
+annotations + README usage docs.
+
+### Conformance suite
+
+- New `tests/conformance/` directory with `build_corpus.py` that
+  generates 3 reference shards plus per-shard `*.expected.json`
+  invariants (version, manifest_hash hex, shard_merkle_root hex,
+  manifest_size, document_count, per-view config_hash + total_tokens
+  + num_chunks).
+- `python/tests/test_conformance.py` runs the Python reader against
+  every fixture; `crates/tset-core/tests/conformance.rs` runs the
+  Rust reader against the same fixtures. Both must report identical
+  invariants — any divergence is a conformance failure.
+- Three fixtures: `fixture-empty` (single empty doc), `fixture-small`
+  (3 docs + metadata + 2 views), `fixture-big` (100 deterministic
+  docs).
+
+### Writer adapter
+
+- `tset.rust_writer.RustWriter` — drop-in replacement for `tset.Writer`
+  that delegates to `tset_rs.Writer`. Accepts a `Tokenizer` instance
+  the way the Python writer does and translates it to the
+  `(id, vocab_size)` pair the Rust binding takes.
+- 3 new tests in `python/tests/test_rust_writer_adapter.py`.
+- The legacy Python writer is NOT removed — it stays for users who
+  want to avoid the Rust toolchain. Adapter is the migration path,
+  not a hard switch.
+
+### SPEC freeze annotations
+
+- Top of `SPEC.md` now declares per-section stability:
+  - §2 Header, §3 Footer, §4 Document store, §5 Tokenization view,
+    §7 Reader/writer obligations, §8 Manifest, §9 Out of scope:
+    **frozen at v0.2**
+  - §6 SMT: **design under review** (RFC §10 #14–16; pending
+    cryptographer sign-off)
+
+### README
+
+- Replaced the thin Quickstart with a full Usage section covering:
+  Python install, optional Rust core via maturin, CLI subcommands,
+  Python API (Reader / Writer / `append_tokenizer_view` / multi-shard
+  datasets), Rust API, and format converters.
+
+### Test totals
+
+- 36 Rust (was 35; +1 conformance integration test running 3 fixtures)
+- 92 Python (was 86; +4 conformance + 3 RustWriter adapter)
+- All stable across 5 trials
+
+### What's still left
+
+- v1.0 spec freeze: pending cryptographer sign-off on SMT params
+  (RFC §10 #14–16) and at least one production deployment per
+  RFC §6 v1 success metrics. **Code-side, this is a documentation
+  exercise; signoff is a humans-in-the-loop activity.**
+- Drop legacy Python writer/reader entirely (replace with shim that
+  always delegates to Rust). Not done in PR 6 because it removes a
+  fallback path and the conformance suite proves the impls agree —
+  flipping the default is a separate decision.
+
 ## [0.2.3] — 2026-04-27
 
 PR 5: format converters + HuggingFace adapter + criterion benchmarks.
