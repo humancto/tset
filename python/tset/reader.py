@@ -178,6 +178,7 @@ class Reader:
         chunks = view["chunks"]
         source_map = view["source_map"]
         vocab_size = view["vocab_size"]
+        bits_per_token = view.get("bits_per_token", 32)  # v0.3+; default for older shards
         chunk_arrays: dict[int, np.ndarray] = {}
 
         def chunk_arr(idx: int) -> np.ndarray:
@@ -185,7 +186,11 @@ class Reader:
             if cached is not None:
                 return cached
             arr = read_chunk(
-                self._mm, view_offset, ChunkInfo(**chunks[idx]), vocab_size=vocab_size
+                self._mm,
+                view_offset,
+                ChunkInfo(**chunks[idx]),
+                vocab_size=vocab_size,
+                bits_per_token=bits_per_token,
             )
             chunk_arrays[idx] = arr
             return arr

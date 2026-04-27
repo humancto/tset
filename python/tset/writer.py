@@ -164,6 +164,7 @@ class Writer:
                 "tokenizer_config": view.tokenizer_config,
                 "config_hash": view.config_hash.hex(),
                 "total_tokens": view.total_tokens,
+                "bits_per_token": 32,
                 "chunks": [
                     {
                         "byte_offset_in_view": c.byte_offset_in_view,
@@ -290,6 +291,7 @@ def append_tokenizer_view(path: str, tokenizer: Tokenizer) -> None:
             "tokenizer_config": view.tokenizer_config,
             "config_hash": view.config_hash.hex(),
             "total_tokens": view.total_tokens,
+            "bits_per_token": 32,
             "chunks": [
                 {
                     "byte_offset_in_view": c.byte_offset_in_view,

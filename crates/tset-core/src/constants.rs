@@ -4,8 +4,8 @@ pub const MAGIC_DOC_BLOCK: &[u8; 4] = b"DBLK";
 pub const MAGIC_VIEW: &[u8; 4] = b"TVEW";
 
 pub const VERSION_MAJOR: u8 = 0;
-pub const VERSION_MINOR: u8 = 2;
-pub const SUPPORTED_MINOR_VERSIONS: &[u8] = &[1, 2];
+pub const VERSION_MINOR: u8 = 3;
+pub const SUPPORTED_MINOR_VERSIONS: &[u8] = &[1, 2, 3];
 
 pub const HEADER_SIZE: usize = 4096;
 pub const FOOTER_SIZE: usize = 40;

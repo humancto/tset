@@ -11,6 +11,16 @@ pub struct ChunkInfo {
     pub content_hash: Option<Hash>,
 }
 
+/// Bits per token for a tokenization view. v0.3+ chooses the smallest
+/// width that fits the vocabulary; v0.1/v0.2 always used 32.
+pub fn bits_per_token_for_vocab(vocab_size: u32) -> u8 {
+    if vocab_size <= (1u32 << 16) {
+        16
+    } else {
+        32
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SourceMapEntry {
     pub doc_hash: Hash,
@@ -23,6 +33,19 @@ pub fn read_chunk(
     view_offset: u64,
     chunk: &ChunkInfo,
     vocab_size: Option<u32>,
+) -> TsetResult<Vec<u32>> {
+    read_chunk_with_bits(file_bytes, view_offset, chunk, vocab_size, 32)
+}
+
+/// v0.3+ entry point — accepts a per-view `bits_per_token` so 16-bit
+/// packed chunks can be decoded. v0.1/v0.2 callers pass 32 (or use
+/// `read_chunk` which defaults to 32).
+pub fn read_chunk_with_bits(
+    file_bytes: &[u8],
+    view_offset: u64,
+    chunk: &ChunkInfo,
+    vocab_size: Option<u32>,
+    bits_per_token: u8,
 ) -> TsetResult<Vec<u32>> {
     let abs_offset = view_offset
         .checked_add(chunk.byte_offset_in_view)
@@ -64,18 +87,43 @@ pub fn read_chunk(
     if raw.len() as u64 != uncompressed_size {
         return Err(TsetError::ChunkUncompressedSizeMismatch);
     }
-    if raw.len() % 4 != 0 {
+    let bytes_per_token = match bits_per_token {
+        16 => 2usize,
+        32 => 4usize,
+        other => {
+            return Err(TsetError::BadManifest(match other {
+                _ => "unsupported bits_per_token (must be 16 or 32 in v0.3)",
+            }))
+        }
+    };
+    if raw.len() % bytes_per_token != 0 {
         return Err(TsetError::ChunkUncompressedSizeMismatch);
     }
-    let mut tokens = Vec::with_capacity(raw.len() / 4);
-    for c in raw.chunks_exact(4) {
-        let id = u32::from_le_bytes(c.try_into().unwrap());
-        if let Some(v) = vocab_size {
-            if id >= v {
-                return Err(TsetError::TokenIdOutOfRange(id, v));
+    let mut tokens = Vec::with_capacity(raw.len() / bytes_per_token);
+    match bits_per_token {
+        16 => {
+            for c in raw.chunks_exact(2) {
+                let id = u16::from_le_bytes(c.try_into().unwrap()) as u32;
+                if let Some(v) = vocab_size {
+                    if id >= v {
+                        return Err(TsetError::TokenIdOutOfRange(id, v));
+                    }
+                }
+                tokens.push(id);
             }
         }
-        tokens.push(id);
+        32 => {
+            for c in raw.chunks_exact(4) {
+                let id = u32::from_le_bytes(c.try_into().unwrap());
+                if let Some(v) = vocab_size {
+                    if id >= v {
+                        return Err(TsetError::TokenIdOutOfRange(id, v));
+                    }
+                }
+                tokens.push(id);
+            }
+        }
+        _ => unreachable!(),
     }
     Ok(tokens)
 }
@@ -147,6 +195,8 @@ pub struct TokenizationViewBuild {
     pub config_hash: Hash,
     pub vocab_size: u32,
     pub tokenizer_config: Value,
+    /// 16 or 32. Recorded in the manifest's view entry; readers dispatch.
+    pub bits_per_token: u8,
 }
 
 /// Build a v0.2 tokenization view: chunked, zstd-compressed, content-hashed
@@ -175,6 +225,7 @@ fn build_view_one<T: Tokenizer + ?Sized>(
     chunk_size_tokens: usize,
     sparse_interval: usize,
 ) -> TsetResult<TokenizationViewBuild> {
+    let bits_per_token = bits_per_token_for_vocab(tokenizer.vocab_size());
     let mut chunks: Vec<ChunkInfo> = Vec::new();
     let mut chunk_payloads: Vec<Vec<u8>> = Vec::new();
     let mut source_map: Vec<SourceMapEntry> = Vec::new();
@@ -193,10 +244,22 @@ fn build_view_one<T: Tokenizer + ?Sized>(
             return;
         }
         // pending values were range-checked during tokenization on encode
-        let mut raw = Vec::with_capacity(pending.len() * 4);
-        for id in pending.iter() {
-            raw.extend_from_slice(&id.to_le_bytes());
-        }
+        let raw: Vec<u8> = match bits_per_token {
+            16 => {
+                let mut buf = Vec::with_capacity(pending.len() * 2);
+                for id in pending.iter() {
+                    buf.extend_from_slice(&(*id as u16).to_le_bytes());
+                }
+                buf
+            }
+            _ => {
+                let mut buf = Vec::with_capacity(pending.len() * 4);
+                for id in pending.iter() {
+                    buf.extend_from_slice(&id.to_le_bytes());
+                }
+                buf
+            }
+        };
         let compressed = zstd::stream::encode_all(&raw[..], ZSTD_LEVEL)
             .expect("zstd encode in-memory should not fail");
         let content_hash = hash_bytes(&compressed);
@@ -306,5 +369,6 @@ fn build_view_one<T: Tokenizer + ?Sized>(
         config_hash,
         vocab_size: tokenizer.vocab_size(),
         tokenizer_config: tokenizer.config(),
+        bits_per_token,
     })
 }

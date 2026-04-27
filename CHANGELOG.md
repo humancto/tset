@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] — 2026-04-27
+
+PR 9: bit-packed token IDs — first format-version bump since v0.2.
+
+### Format
+
+- `version_minor = 3` (was 2). v0.3 readers MUST read v0.1, v0.2, v0.3.
+- New per-view manifest field `bits_per_token: u8`. Currently `16` or
+  `32`. The Rust writer chooses 16 when `vocab_size ≤ 65536` (covers
+  all byte-level + most whitespace-hashed configs); else 32.
+- v0.1/v0.2 shards have no `bits_per_token` field; readers default to
+  32 (matches the historic on-disk layout).
+
+### Rust
+
+- `tset_core::tokenizer_view::bits_per_token_for_vocab(u32) -> u8`
+  selects the smallest width that fits.
+- `read_chunk_with_bits` is the new entry point; old `read_chunk`
+  becomes a thin wrapper that hard-codes 32 (callers that don't have
+  bits_per_token in scope).
+- `build_view` packs as 16-bit u16 LE when vocab fits, otherwise the
+  existing 32-bit u32 LE.
+- `Reader::open_view` reads `bits_per_token` from the manifest with
+  default 32.
+
+### Python
+
+- `tset.constants.VERSION_MINOR = 3` (was 2).
+- Python writer emits `bits_per_token: 32` (it never bit-packs; the
+  field is required for v0.3 conformance).
+- `tset.tokenizer_view.read_chunk` accepts `bits_per_token={16,32}`
+  and unpacks via `np.frombuffer(dtype=np.uint16).astype(np.uint32)`
+  on the 16-bit path.
+- Reader threads `bits_per_token` through to `read_chunk`.
+
+### Tests
+
+- `python/tests/test_pr9_bitpacking.py`:
+  - Rust writer emits `bits_per_token=16` for byte-level
+  - Round-trip parity (Python and Rust readers decode the same tokens)
+  - Storage win: 16-bit chunks measured at ~19% smaller than 32-bit
+    chunks on a 50-doc repeated corpus (the headline 2× shrink is
+    bigger but zstd absorbs much of it on small vocabularies; lock
+    threshold at ≥ 15%)
+  - Forward compat: v0.1, v0.2-equivalent (current), v0.3 fixtures
+    are all openable
+
+### Test totals
+
+- 36 Rust + 115 Python = 151
+
 ## [0.2.6] — 2026-04-27
 
 PR 8: streaming-writer pass for the Rust core.

@@ -13,7 +13,9 @@ use crate::footer::Footer;
 use crate::hashing::{hash_bytes, shard_merkle_root, Hash};
 use crate::header::Header;
 use crate::manifest::Manifest;
-use crate::tokenizer_view::{read_chunk, verify_view_header, ChunkInfo, SourceMapEntry};
+use crate::tokenizer_view::{
+    read_chunk_with_bits, verify_view_header, ChunkInfo, SourceMapEntry,
+};
 
 fn required_u64(
     v: &Value,
@@ -384,10 +386,18 @@ impl Reader {
             });
         }
 
+        // bits_per_token is v0.3+; default to 32 for v0.1/v0.2 shards
+        // that don't carry the field.
+        let bits_per_token = v
+            .get("bits_per_token")
+            .and_then(Value::as_u64)
+            .unwrap_or(32) as u8;
+
         Ok(TokenizationView {
             mmap: &self.mmap,
             view_offset,
             vocab_size,
+            bits_per_token,
             chunks,
             source_map,
             total_tokens,
@@ -399,6 +409,7 @@ pub struct TokenizationView<'a> {
     mmap: &'a Mmap,
     view_offset: u64,
     vocab_size: u32,
+    bits_per_token: u8,
     chunks: Vec<ChunkInfo>,
     source_map: Vec<SourceMapEntry>,
     total_tokens: u64,
@@ -412,7 +423,13 @@ impl<'a> TokenizationView<'a> {
     pub fn read_all(&self) -> TsetResult<Vec<u32>> {
         let mut out = Vec::with_capacity(self.total_tokens as usize);
         for chunk in &self.chunks {
-            let arr = read_chunk(&self.mmap, self.view_offset, chunk, Some(self.vocab_size))?;
+            let arr = read_chunk_with_bits(
+                &self.mmap,
+                self.view_offset,
+                chunk,
+                Some(self.vocab_size),
+                self.bits_per_token,
+            )?;
             out.extend_from_slice(&arr);
         }
         Ok(out)
@@ -509,11 +526,12 @@ impl<'a> Iterator for LazyDocIter<'a> {
             let mut piece: Vec<u32> = Vec::with_capacity(entry.token_count as usize);
             while remaining > 0 {
                 if self.cache.get(cid).is_none() {
-                    let arr = match read_chunk(
+                    let arr = match read_chunk_with_bits(
                         self.view.mmap,
                         self.view.view_offset,
                         &self.view.chunks[cid],
                         Some(self.view.vocab_size),
+                        self.view.bits_per_token,
                     ) {
                         Ok(a) => a,
                         Err(e) => return Some(Err(e)),
