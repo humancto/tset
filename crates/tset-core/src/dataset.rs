@@ -374,6 +374,12 @@ impl Dataset {
 }
 
 fn decode_siblings(arr: &[Value]) -> Option<Vec<Hash>> {
+    // The SMT is fixed-depth at SMT_DEPTH=256. A proof must have exactly
+    // that many siblings; anything else is malformed and we reject up front
+    // rather than letting verify_path return a meaningless `None`.
+    if arr.len() != crate::smt::SMT_DEPTH {
+        return None;
+    }
     let mut out = Vec::with_capacity(arr.len());
     for v in arr {
         let s = v.as_str()?;
@@ -492,7 +498,7 @@ impl DatasetWriter {
             return Ok(());
         }
         self.closed = true;
-        let snapshot_id = format!("snapshot-{}", current_timestamp() as u64);
+        let snapshot_id = format_snapshot_id(current_timestamp());
         let ds_root = dataset_merkle_root(&self.shards);
         self.audit.append(
             "version_snapshot",
@@ -537,6 +543,62 @@ fn current_timestamp() -> f64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0)
+}
+
+/// Format `secs_since_epoch` as `snapshot-YYYYMMDD-HHMMSS` UTC, matching
+/// Python's `datetime.now(timezone.utc).strftime("snapshot-%Y%m%d-%H%M%S")`.
+/// Implemented inline (no chrono dep) using the standard civil-from-days
+/// algorithm.
+pub(crate) fn format_snapshot_id(secs_since_epoch: f64) -> String {
+    let secs = secs_since_epoch as i64;
+    let days = secs.div_euclid(86_400);
+    let day_secs = secs.rem_euclid(86_400);
+    let h = day_secs / 3600;
+    let m = (day_secs % 3600) / 60;
+    let s = day_secs % 60;
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "snapshot-{year:04}{month:02}{day:02}-{h:02}{m:02}{s:02}"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_id_matches_python_strftime() {
+        // From Python (Apr 2026):
+        //   import calendar
+        //   calendar.timegm((2026, 4, 27, 15, 34, 22, 0, 0, 0))  -> 1777304062
+        //   datetime.fromtimestamp(1777304062, timezone.utc)
+        //     .strftime("snapshot-%Y%m%d-%H%M%S")
+        //     -> "snapshot-20260427-153422"
+        let t = 1_777_304_062.0;
+        assert_eq!(format_snapshot_id(t), "snapshot-20260427-153422");
+    }
+
+    #[test]
+    fn snapshot_id_zero_is_unix_epoch() {
+        assert_eq!(format_snapshot_id(0.0), "snapshot-19700101-000000");
+    }
+}
+
+/// Hinnant's "days_from_civil" inverse — returns (year, month, day).
+/// Days are unix epoch days (1970-01-01 = 0).
+fn civil_from_days(z: i64) -> (i32, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32; // [0, 146_096]
+    let yoe =
+        (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = (yoe as i64 + era * 400) as i32;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if m <= 2 { y + 1 } else { y };
+    (year, m, d)
 }
 
 fn write_pretty_sorted(v: &Value, indent: usize, out: &mut String) {

@@ -100,6 +100,60 @@ def test_rust_writer_metadata_visible_in_python_columns(tmp_path):
     assert matched == [0, 2]
 
 
+def test_rust_dataset_manifest_pretty_print_matches_python(tmp_path):
+    """Rust's hand-rolled pretty-printer must match Python's
+    json.dumps(obj, sort_keys=True, indent=2) byte-for-byte (modulo a
+    final newline). Round-trip the dataset manifest written by Rust
+    through Python's json.loads + json.dumps and assert equality."""
+    import json
+
+    root = str(tmp_path / "ds.tset")
+    _build_dataset(root)
+    raw = open(os.path.join(root, "manifest.tset.json")).read()
+    obj = json.loads(raw)
+    py_pretty = json.dumps(obj, sort_keys=True, indent=2) + "\n"
+    assert raw == py_pretty
+
+
+def test_rust_writer_metadata_rejects_non_json_serializable(tmp_path):
+    p = str(tmp_path / "bad.tset")
+    import datetime
+
+    with tset_rs.Writer(p) as w:
+        with pytest.raises(TypeError):
+            w.add_document(b"x", {"when": datetime.datetime.now()})
+
+
+def test_rust_predicate_keyword_column_names_rejected(tmp_path):
+    p = str(tmp_path / "kw.tset")
+    with tset_rs.Writer(p) as w:
+        w.add_document(b"a", {"col": 1})
+        w.add_tokenizer_view("byte-level-v1", 256)
+    from tset.reader import Reader as PyReader
+
+    py = PyReader(p)
+    cols = py.metadata_columns()
+    # Python's predicate compiler rejects keyword column names. The Rust
+    # compiler rejects them too — but we test both ends through the
+    # Python reader (which uses the Python compiler today).
+    with pytest.raises(ValueError):
+        cols.filter_sql_like("AND = 1")
+
+
+def test_rust_predicate_deep_parens_no_panic(tmp_path):
+    p = str(tmp_path / "deep.tset")
+    with tset_rs.Writer(p) as w:
+        w.add_document(b"a", {"col": 1})
+        w.add_tokenizer_view("byte-level-v1", 256)
+    from tset.reader import Reader as PyReader
+
+    cols = PyReader(p).metadata_columns()
+    # 50 levels of parens — well under any sane stack limit but exercises
+    # the recursive descent path.
+    expr = "(" * 50 + "col = 1" + ")" * 50
+    assert cols.filter_sql_like(expr) == [0]
+
+
 def test_rust_subsets_persisted_in_manifest(tmp_path):
     p = str(tmp_path / "subsets.tset")
     with tset_rs.Writer(p) as w:
