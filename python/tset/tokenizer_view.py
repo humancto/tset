@@ -25,6 +25,8 @@ class ChunkInfo:
     byte_offset_in_view: int
     compressed_size: int
     num_tokens: int
+    # v0.2+: BLAKE3 over the compressed payload. None for v0.1 shards.
+    content_hash: str | None = None
 
 
 @dataclass
@@ -184,6 +186,9 @@ def read_chunk(
             abs_offset + CHUNK_HEADER_SIZE : abs_offset + CHUNK_HEADER_SIZE + compressed_size
         ]
     )
+    if chunk.content_hash:
+        if hash_bytes(payload).hex() != chunk.content_hash:
+            raise ValueError("chunk content_hash mismatch (compressed payload tampered)")
     raw = zstd.ZstdDecompressor().decompress(payload, max_output_size=uncompressed_size)
     if len(raw) != uncompressed_size:
         raise ValueError("chunk decompressed size mismatch")

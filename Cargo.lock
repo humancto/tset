@@ -432,6 +432,7 @@ version = "0.2.0"
 dependencies = [
  "blake3",
  "hex",
+ "indexmap",
  "memmap2",
  "serde",
  "serde_json",

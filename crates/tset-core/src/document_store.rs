@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
+
 use crate::constants::{HASH_SIZE, MAGIC_DOC_BLOCK};
 use crate::error::{TsetError, TsetResult};
-use crate::hashing::Hash;
+use crate::hashing::{hash_bytes, Hash};
 
 const BLOCK_HEADER_SIZE: usize = 4 + 4 + 8 + 8;
+pub const DEFAULT_BLOCK_TARGET_BYTES: usize = 8 * 1024 * 1024;
+
+use crate::constants::ZSTD_LEVEL;
 
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
@@ -125,5 +130,114 @@ impl<'a> DocumentStoreReader<'a> {
             .borrow_mut()
             .insert(block_idx, decompressed.clone());
         Ok(decompressed)
+    }
+}
+
+/// Builds compressed, content-addressed document blocks. Identical
+/// content (same BLAKE3) is stored once.
+pub struct DocumentStoreWriter {
+    block_target_bytes: usize,
+    buffer: Vec<u8>,
+    buffer_doc_count: u32,
+    pending_locators: IndexMap<Hash, (u64, u64)>, // hash → (in_block_offset, content_size)
+    index: IndexMap<Hash, DocumentLocator>,
+    blocks: Vec<BlockInfo>,
+    encoded_blocks: Vec<Vec<u8>>,
+}
+
+impl DocumentStoreWriter {
+    pub fn new() -> Self {
+        Self::with_block_target(DEFAULT_BLOCK_TARGET_BYTES)
+    }
+
+    pub fn with_block_target(block_target_bytes: usize) -> Self {
+        Self {
+            block_target_bytes,
+            buffer: Vec::new(),
+            buffer_doc_count: 0,
+            pending_locators: IndexMap::new(),
+            index: IndexMap::new(),
+            blocks: Vec::new(),
+            encoded_blocks: Vec::new(),
+        }
+    }
+
+    pub fn add(&mut self, content: &[u8]) -> Hash {
+        let h = hash_bytes(content);
+        if self.index.contains_key(&h) || self.pending_locators.contains_key(&h) {
+            return h;
+        }
+        let in_block_offset = self.buffer.len() as u64;
+        self.buffer.extend_from_slice(&h);
+        self.buffer.extend_from_slice(&(content.len() as u64).to_le_bytes());
+        self.buffer.extend_from_slice(content);
+        self.pending_locators
+            .insert(h, (in_block_offset, content.len() as u64));
+        self.buffer_doc_count += 1;
+        if self.buffer.len() >= self.block_target_bytes {
+            self.flush_block();
+        }
+        h
+    }
+
+    fn flush_block(&mut self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        let uncompressed_size = self.buffer.len() as u64;
+        let compressed = zstd::stream::encode_all(&self.buffer[..], ZSTD_LEVEL)
+            .expect("zstd encode should not fail on in-memory data");
+        let block_idx = self.blocks.len() as u32;
+        for (h, (off, size)) in self.pending_locators.drain(..) {
+            self.index.insert(
+                h,
+                DocumentLocator {
+                    block_idx,
+                    in_block_offset: off,
+                    content_size: size,
+                },
+            );
+        }
+        let mut encoded = Vec::with_capacity(BLOCK_HEADER_SIZE + compressed.len());
+        encoded.extend_from_slice(MAGIC_DOC_BLOCK);
+        encoded.extend_from_slice(&self.buffer_doc_count.to_le_bytes());
+        encoded.extend_from_slice(&uncompressed_size.to_le_bytes());
+        encoded.extend_from_slice(&(compressed.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(&compressed);
+        self.blocks.push(BlockInfo {
+            offset: 0,
+            compressed_size: compressed.len() as u64,
+            uncompressed_size,
+            num_documents: self.buffer_doc_count,
+        });
+        self.encoded_blocks.push(encoded);
+        self.buffer.clear();
+        self.buffer_doc_count = 0;
+    }
+
+    /// Finalize the writer, assigning real file offsets starting at
+    /// `body_offset`. Returns the concatenated encoded body, the block
+    /// info table, and the doc → locator index (insertion order).
+    pub fn finalize(
+        mut self,
+        body_offset: u64,
+    ) -> (Vec<u8>, Vec<BlockInfo>, IndexMap<Hash, DocumentLocator>) {
+        self.flush_block();
+        let mut cursor = body_offset;
+        for block in &mut self.blocks {
+            block.offset = cursor;
+            cursor += BLOCK_HEADER_SIZE as u64 + block.compressed_size;
+        }
+        let mut body = Vec::new();
+        for enc in &self.encoded_blocks {
+            body.extend_from_slice(enc);
+        }
+        (body, self.blocks, self.index)
+    }
+}
+
+impl Default for DocumentStoreWriter {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -1,6 +1,7 @@
-# TSET Binary Layout Specification — v0.1
+# TSET Binary Layout Specification — v0.2
 
-This document is the normative binary-layout spec for TSET v0.1. The high-level
+This document is the normative binary-layout spec for TSET. v0.2 is the
+current revision; v0.1 shards remain readable. The high-level
 design rationale lives in [`RFC.md`](RFC.md); this file fixes the bytes.
 
 All multi-byte integers are little-endian (LE). All hashes are BLAKE3 (32 bytes
@@ -33,7 +34,7 @@ and hash.
 |-----------|-------------------------------|---------------|------------------------------------|
 | `0:4`     | `magic`                       | bytes         | ASCII `"TSET"`                     |
 | `4:5`     | `version_major`               | uint8         | `0` for v0.x                       |
-| `5:6`     | `version_minor`               | uint8         | `1` for v0.1                       |
+| `5:6`     | `version_minor`               | uint8         | `1` for v0.1 shards; `2` for v0.2  |
 | `6:8`     | `reserved`                    | bytes         | zeros                              |
 | `8:12`    | `flags`                       | uint32 LE     | reserved, must be 0                |
 | `12:16`   | `reserved`                    | bytes         | zeros                              |
@@ -113,8 +114,15 @@ deferred to v0.2 (RFC §10.7). Vocabulary size is recorded in the manifest;
 readers MUST reject token IDs ≥ vocab_size.
 
 The chunk layout is recoverable from the manifest's per-view `chunks` array
-which records `(byte_offset_in_view, compressed_size, num_tokens)` for each
-chunk.
+which records `(byte_offset_in_view, compressed_size, num_tokens, content_hash)`
+for each chunk.
+
+**v0.2: per-chunk content hashing.** Each chunk manifest entry includes
+`content_hash` = BLAKE3 of the **compressed** chunk payload (the bytes
+between `[24..24+compressed_size]`). Readers MUST verify on read. v0.1
+shards omit `content_hash`; v0.2 readers MUST accept v0.1 shards but
+content-tampering of v0.1 chunk bodies is only detected if it disturbs
+chunk header fields (the manifest hash binds those).
 
 ### 5.1 Source map
 
