@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.egg-info/
+benchmarks/results/*.json
+benchmarks/corpus/*.tset
+benchmarks/corpus/*.bin
+benchmarks/corpus/*.jsonl
