@@ -39,12 +39,31 @@ from tset.writer import Writer  # noqa: E402
 FIXTURES = os.path.join(HERE, "fixtures")
 
 
-def _make(path: str, build) -> dict:
-    """Run `build(writer)` then snapshot the immutable invariants."""
+def _make(name: str, path: str, build) -> dict:
+    """Run `build(writer)` then snapshot the immutable invariants.
+
+    Sets deterministic env vars (TSET_DETERMINISTIC_TIME, _CREATED_AT,
+    _SNAPSHOT_ID) so the resulting shard is byte-stable across machines
+    and Python runs — required for the committed fixtures to match a
+    fresh `build_corpus.py` invocation. The shard_id is derived from
+    the fixture name to keep that field deterministic too.
+    """
     if os.path.exists(path):
         os.remove(path)
-    with Writer(path) as w:
-        build(w)
+    os.environ["TSET_DETERMINISTIC_TIME"] = "1700000000.0"
+    os.environ["TSET_DETERMINISTIC_CREATED_AT"] = "2023-11-14T22:13:20+00:00"
+    os.environ["TSET_DETERMINISTIC_SNAPSHOT_ID"] = f"{name}-snap"
+    shard_id = f"conformance-{name}-shard-id-padding".encode().hex()[:32]
+    try:
+        with Writer(path, shard_id=shard_id) as w:
+            build(w)
+    finally:
+        for k in (
+            "TSET_DETERMINISTIC_TIME",
+            "TSET_DETERMINISTIC_CREATED_AT",
+            "TSET_DETERMINISTIC_SNAPSHOT_ID",
+        ):
+            os.environ.pop(k, None)
     r = Reader(path)
     invariants = {
         "version_minor": r.header.version_minor,
@@ -98,7 +117,7 @@ def main() -> None:
     ]
     for name, build in cases:
         shard = os.path.join(FIXTURES, f"{name}.tset")
-        invariants = _make(shard, build)
+        invariants = _make(name, shard, build)
         with open(os.path.join(FIXTURES, f"{name}.expected.json"), "w") as f:
             json.dump(invariants, f, indent=2, sort_keys=True)
             f.write("\n")

@@ -18,7 +18,23 @@ from tset.tokenizers import Tokenizer
 
 
 class RustWriter:
-    def __init__(self, path: str, shard_id: str | None = None) -> None:
+    def __init__(
+        self,
+        path: str,
+        block_target_bytes: int | None = None,
+        shard_id: str | None = None,
+    ) -> None:
+        if block_target_bytes is not None:
+            # The Rust core uses a fixed default block target; honoring a
+            # caller-supplied value would silently change layout vs. the
+            # Python writer with the same kwarg. Reject loudly so a
+            # `from tset.rust_writer import RustWriter as Writer` swap
+            # surfaces the unsupported kwarg instead of dropping it.
+            raise TypeError(
+                "RustWriter does not accept `block_target_bytes` yet; the "
+                "Rust core uses the spec default. File a request if you "
+                "need this configurable."
+            )
         try:
             import tset_rs  # type: ignore[import-not-found]
         except ImportError as e:

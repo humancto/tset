@@ -37,6 +37,14 @@ def test_rust_writer_adapter_whitespace_tokenizer(tmp_path):
     assert view["vocab_size"] == 512
 
 
+def test_rust_writer_rejects_block_target_bytes(tmp_path):
+    """Python Writer accepts `block_target_bytes`; Rust core uses a fixed
+    default. Adapter must reject the kwarg loudly so a Writer→RustWriter
+    swap surfaces unsupported kwargs instead of silently dropping them."""
+    with pytest.raises(TypeError, match="block_target_bytes"):
+        RustWriter(str(tmp_path / "x.tset"), block_target_bytes=1024 * 1024)
+
+
 def test_rust_writer_adapter_subsets_persist(tmp_path):
     p = str(tmp_path / "subs.tset")
     with RustWriter(p) as w:

@@ -14,9 +14,14 @@
 > | §9 Out of scope | **frozen** at v0.2 |
 >
 > "Frozen" means the wire format and reader semantics are stable for the
-> v0.2 series. Additive fields are allowed within v0.2 if they are made
-> mandatory by a minor-version bump (v0.2 → v0.3). Breaking changes
-> require a major-version bump (v0.x → v1.0+).
+> v0.2 series. TSET uses **major-only-breaking** versioning, not strict
+> SemVer:
+> - **Patch** (v0.2.x): doc/test changes only, no wire format change.
+> - **Minor** (v0.2 → v0.3): may add new optional fields and tokenizer
+>   IDs; readers from the previous minor version MUST still open shards.
+> - **Major** (v0.x → v1.0; v1 → v2): may make new fields mandatory,
+>   change existing field semantics, or alter byte layout. Older readers
+>   are expected to reject new-major shards via the version-byte check.
 
 This document is the normative binary-layout spec for TSET. v0.2 is the
 current revision; v0.1 shards remain readable. The high-level
