@@ -2,6 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] — 2026-04-27
+
+PR 5: format converters + HuggingFace adapter + criterion benchmarks.
+
+### Format converters
+
+- `tset.converters.webdataset_to_tset(tar_path, dst, tokenizer)` —
+  reads WebDataset `.tar` shards via stdlib `tarfile` (no external
+  dep). Groups files by stem; treats `<stem>.txt` as the document
+  body and `<stem>.json` / `<stem>.cls` as metadata fields.
+- `tset.converters.mds_to_tset(mds_dir, dst, tokenizer)` — bridges
+  MosaicML Streaming datasets via the official `mosaicml-streaming`
+  reader (lazy import; raises a runtime error with an install hint
+  if missing).
+- Both converters reuse the existing `Writer` so the v0.2 format
+  invariants (per-chunk content_hash, audit log, SMT) all flow
+  through automatically.
+
+### HuggingFace integration
+
+- `tset.converters.hf_dataset_view(tset_path)` returns a generator
+  function suitable for `datasets.Dataset.from_generator`.
+- `tset.converters.to_huggingface_dataset(tset_path)` lazy-imports
+  `datasets` and materializes the shard as a HF `Dataset` with
+  `text` + `doc_hash` columns.
+- HF is an optional dependency — clear runtime error with install
+  hint when missing.
+
+### tset-bench (new crate)
+
+- `crates/tset-bench` with criterion benches for the hot paths:
+  - `streaming` — Reader::open + view.iter_per_doc throughput
+  - `writer` — full shard write throughput; tokenizer-swap (RFC
+    Benchmark C) timing two views vs one
+  - `smt` — SMT insert / prove inclusion / prove non-inclusion at
+    n ∈ {100, 1k, 10k}
+- Run with `cargo bench -p tset-bench --bench <name>`. Not a
+  workspace member of `cargo test` runs; explicitly invoked.
+
+### Tests
+
+- 7 new Python tests in `python/tests/test_converters_pr5.py`:
+  WebDataset round-trip; WebDataset handles dotted-extension stems
+  (`0001.metadata.txt` → stem=`0001.metadata`, ext=`txt`); WebDataset
+  preserves non-UTF-8 bodies; WebDataset skips samples missing content;
+  MDS without `mosaicml-streaming` raises RuntimeError with install hint;
+  HF generator yields `text + doc_hash`; HF without `datasets` raises
+  clear error.
+- All criterion benches compile and run a smoke pass.
+
+### Test totals
+
+- 35 Rust + 86 Python = 121, all stable
+
+### Deferred to PR 6
+
+- Drop legacy Python writer/reader (re-export from tset_rs). The
+  Python implementation has features the Rust core hasn't matched
+  yet — DataLoader, audit-log signing, mixture sampler — so wholesale
+  replacement risks regressions.
+- v1.0 spec freeze + conformance test suite. Needs cryptography
+  reviewer sign-off on SMT params (RFC §10 14-18) before locking.
+
 ## [0.2.2] — 2026-04-27
 
 PR 4: Rust DatasetWriter + MetadataColumns + Mixture / Subset.

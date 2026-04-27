@@ -4,6 +4,7 @@ members = [
     "crates/tset-core",
     "crates/tset-py",
     "crates/tset-cli",
+    "crates/tset-bench",
 ]
 
 [workspace.package]
