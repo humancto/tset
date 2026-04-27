@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    name: rust (cargo test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace --release
+
+  python:
+    name: python (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install zstandard numpy blake3 pytest maturin
+      - name: build tset_rs wheel
+        run: |
+          cd crates/tset-py
+          maturin build --release
+          pip install --force-reinstall ../../target/wheels/tset_rs-*.whl
+      - name: rebuild conformance corpus
+        run: python tests/conformance/build_corpus.py
+      - name: pytest
+        run: cd python && python -m pytest tests/ -v
+
+  cli:
+    name: cli (smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p tset-cli
+      - run: cargo test --release -p tset-cli

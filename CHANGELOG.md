@@ -2,6 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.5] — 2026-04-27
+
+PR 7: production-readiness pass — Tier 1/2/3 items from ROADMAP.md.
+
+### Reader
+
+- **Lazy streaming**. `iter_per_doc` is now a true iterator with a
+  bounded 2-slot LRU cache. Previously held every chunk in memory after
+  decompression — fatal for multi-GB shards. New eager `iter_per_doc()`
+  is a thin wrapper kept for the conformance suite; all new code uses
+  `iter_per_doc_lazy`.
+- **Strict v0.2 enforcement at file open**. When `version_minor >= 2`
+  the reader rejects shards with any chunk missing `content_hash` at
+  `Reader::open` time, not only when the view is opened. Closes the
+  PR-3 review item left as deferred.
+
+### Writer (Python)
+
+- **Python writer now actually emits v0.2.** The `content_hash` field
+  on each chunk was declared on the dataclass in PR 2 but never
+  computed by `build_view`. Result: every Python-written shard has been
+  silently v0.1 (with a v0.2 stamp) since PR 2. Fixed: computes
+  `BLAKE3(compressed_payload)` per chunk and writes it to the manifest.
+- `tset.constants.VERSION_MINOR` is now 2 (was hardcoded to 1 in the
+  `Writer.close` Header constructor; replaced with the imported
+  constant).
+- Conformance fixtures regenerated; the v0.1 fixture builder now
+  patches `build_view` to strip `content_hash` after the fact, since
+  the writer no longer emits v0.1 by default.
+
+### PyO3 bindings
+
+- `Reader.smt_root() -> bytes`
+- `Reader.prove_inclusion(doc_hash) -> (doc_hash_hex, [sibling_hex; 256])`
+- `Reader.prove_non_inclusion(doc_hash) -> (...)` (raises if doc IS in shard)
+- Module-level `verify_inclusion_proof` and `verify_non_inclusion_proof`
+  for offline verification without a Reader handle.
+
+### Predicate compiler
+
+- Added `NOT`, `BETWEEN ... AND ...`, `IS NULL`, `IS NOT NULL` in both
+  the Rust (`tset-core::columns`) and Python (`tset._predicate`) impls.
+  Keyword list expanded to reject these as column names.
+
+### DatasetWriter
+
+- `DatasetWriter(root, load_existing=True)` reloads prior shard
+  registrations + exclusions from `manifest.tset.json` so an existing
+  dataset can be extended (add a shard, add an exclusion) without
+  re-registering everything from scratch.
+- `register_shard(name)` is now idempotent — calling it twice with the
+  same name is a no-op.
+
+### Reverse converters
+
+- `tset.converters.tset_to_jsonl(src, dst)` — newline-delimited JSON
+  output with optional doc_hash + metadata columns.
+- `tset.converters.tset_to_parquet(src, dst)` — pyarrow-based round-trip.
+
+### Conformance suite
+
+- New v0.1 fixture (`fixture-v01-small.tset`) committed to git. Locks
+  the "v0.2+ readers MUST read v0.1 shards" rule from RFC §5.6 #6.
+  Build script: `tests/conformance/build_v01_fixture.py`.
+
+### CI
+
+- New `.github/workflows/ci.yml`:
+  - rust job: `cargo fmt --check`, `cargo clippy -D warnings`,
+    `cargo test --workspace --release`
+  - python job: builds the maturin wheel, rebuilds conformance corpus,
+    runs `pytest`
+  - cli job: builds + tests `tset-cli` standalone
+
+### Test totals
+
+- 36 Rust tests
+- 108 Python tests (was 94: +13 in test_pr7.py + v0.1 conformance + assertion fix)
+- 5/5 trial stable
+
 ## [0.2.4] — 2026-04-27
 
 PR 6: language-agnostic conformance suite + Writer adapter + spec freeze

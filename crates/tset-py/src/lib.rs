@@ -140,6 +140,137 @@ impl PyReader {
     fn doc_hashes_hex(&self) -> Vec<String> {
         self.inner.doc_hashes().map(|h| hex::encode(h)).collect()
     }
+
+    fn smt_root<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new_bound(py, &self.inner.smt_root())
+    }
+
+    /// Inclusion proof for a doc that is in this shard. Returns
+    /// `(doc_hash_hex, [sibling_hex; 256])` — siblings are listed
+    /// top-down (root → leaf) per spec.
+    fn prove_inclusion(&self, doc_hash: &[u8]) -> PyResult<(String, Vec<String>)> {
+        let h = parse_doc_hash(doc_hash)?;
+        if !self.inner.has_document(&h) {
+            return Err(PyKeyError::new_err(format!(
+                "document {} not in this shard",
+                hex::encode(h)
+            )));
+        }
+        let smt = build_reader_smt(&self.inner);
+        match smt.prove(&h) {
+            tset_core::smt::Proof::Inclusion(p) => Ok((
+                hex::encode(p.key),
+                p.siblings.iter().map(hex::encode).collect(),
+            )),
+            tset_core::smt::Proof::NonInclusion(_) => Err(PyValueError::new_err(
+                "shard claims doc but SMT says absent",
+            )),
+        }
+    }
+
+    fn prove_non_inclusion(&self, doc_hash: &[u8]) -> PyResult<(String, Vec<String>)> {
+        let h = parse_doc_hash(doc_hash)?;
+        if self.inner.has_document(&h) {
+            return Err(PyValueError::new_err(format!(
+                "document {} IS in this shard; use prove_inclusion",
+                hex::encode(h)
+            )));
+        }
+        let smt = build_reader_smt(&self.inner);
+        match smt.prove(&h) {
+            tset_core::smt::Proof::NonInclusion(p) => Ok((
+                hex::encode(p.key),
+                p.siblings.iter().map(hex::encode).collect(),
+            )),
+            tset_core::smt::Proof::Inclusion(_) => Err(PyValueError::new_err(
+                "SMT says present but reader says absent",
+            )),
+        }
+    }
+}
+
+fn parse_doc_hash(b: &[u8]) -> PyResult<[u8; 32]> {
+    if b.len() != 32 {
+        return Err(PyValueError::new_err("doc_hash must be 32 bytes"));
+    }
+    let mut h = [0u8; 32];
+    h.copy_from_slice(b);
+    Ok(h)
+}
+
+fn build_reader_smt(r: &CoreReader) -> tset_core::smt::SparseMerkleTree {
+    let mut tree = tset_core::smt::SparseMerkleTree::new();
+    if let Some(arr) = r
+        .manifest()
+        .raw()
+        .get("smt_present_keys")
+        .and_then(serde_json::Value::as_array)
+    {
+        for v in arr {
+            if let Some(s) = v.as_str() {
+                if let Ok(bytes) = hex::decode(s) {
+                    if bytes.len() == 32 {
+                        let mut h = [0u8; 32];
+                        h.copy_from_slice(&bytes);
+                        tree.insert(h);
+                    }
+                }
+            }
+        }
+    }
+    tree
+}
+
+/// Verify a SMT proof against a root. Top-level helper so callers can
+/// verify a serialized proof without holding a Reader.
+#[pyfunction]
+fn verify_inclusion_proof(
+    doc_hash: &[u8],
+    siblings_hex: Vec<String>,
+    expected_root: &[u8],
+) -> PyResult<bool> {
+    let h = parse_doc_hash(doc_hash)?;
+    if expected_root.len() != 32 {
+        return Err(PyValueError::new_err("expected_root must be 32 bytes"));
+    }
+    let mut root = [0u8; 32];
+    root.copy_from_slice(expected_root);
+    let mut sibs = Vec::with_capacity(siblings_hex.len());
+    for s in &siblings_hex {
+        let bytes = hex::decode(s).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        if bytes.len() != 32 {
+            return Err(PyValueError::new_err("sibling must decode to 32 bytes"));
+        }
+        let mut sh = [0u8; 32];
+        sh.copy_from_slice(&bytes);
+        sibs.push(sh);
+    }
+    Ok(tset_core::smt::InclusionProof { key: h, siblings: sibs }.verify(&root))
+}
+
+#[pyfunction]
+fn verify_non_inclusion_proof(
+    doc_hash: &[u8],
+    siblings_hex: Vec<String>,
+    expected_root: &[u8],
+) -> PyResult<bool> {
+    let h = parse_doc_hash(doc_hash)?;
+    if expected_root.len() != 32 {
+        return Err(PyValueError::new_err("expected_root must be 32 bytes"));
+    }
+    let mut root = [0u8; 32];
+    root.copy_from_slice(expected_root);
+    let mut sibs = Vec::with_capacity(siblings_hex.len());
+    for s in &siblings_hex {
+        let bytes = hex::decode(s).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        if bytes.len() != 32 {
+            return Err(PyValueError::new_err("sibling must decode to 32 bytes"));
+        }
+        let mut sh = [0u8; 32];
+        sh.copy_from_slice(&bytes);
+        sibs.push(sh);
+    }
+    Ok(tset_core::smt::NonInclusionProof { key: h, siblings: sibs }.verify(&root))
 }
 
 #[pyclass(name = "Writer", module = "tset._rs")]
@@ -379,6 +510,8 @@ fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWriter>()?;
     m.add_class::<PyDataset>()?;
     m.add_class::<PyDatasetWriter>()?;
+    m.add_function(wrap_pyfunction!(verify_inclusion_proof, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_non_inclusion_proof, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

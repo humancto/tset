@@ -34,7 +34,10 @@ _TOKEN_RE = re.compile(
     """,
     re.VERBOSE,
 )
-_KEYWORDS = {"AND", "OR", "IN", "LIKE", "TRUE", "FALSE", "NULL"}
+_KEYWORDS = {
+    "AND", "OR", "NOT", "IN", "IS", "LIKE", "BETWEEN",
+    "TRUE", "FALSE", "NULL",
+}
 
 
 def _tokenize(expr: str) -> list[str]:
@@ -135,6 +138,10 @@ class _Parser:
 
     def parse_atom(self) -> Callable[[dict], bool]:
         t = self.peek()
+        if t and t.upper() == "NOT":
+            self.eat()
+            inner = self.parse_atom()
+            return lambda row, n=inner: not n(row)
         if t == "(":
             self.eat()
             inner = self.parse_or()
@@ -149,6 +156,29 @@ class _Parser:
             raise ValueError(f"expected identifier, got {ident!r}")
         op = self.eat()
         op_upper = op.upper()
+        if op_upper == "IS":
+            nxt = self.eat()
+            nxt_upper = nxt.upper()
+            negated = False
+            if nxt_upper == "NOT":
+                kw = self.eat()
+                if kw.upper() != "NULL":
+                    raise ValueError("expected NULL after IS NOT")
+                negated = True
+            elif nxt_upper != "NULL":
+                raise ValueError("expected NULL or NOT NULL after IS")
+            if negated:
+                return lambda row, c=ident: row.get(c) is not None
+            return lambda row, c=ident: row.get(c) is None
+        if op_upper == "BETWEEN":
+            low = _parse_literal(self.eat())
+            and_kw = self.eat()
+            if and_kw.upper() != "AND":
+                raise ValueError("expected AND in BETWEEN")
+            high = _parse_literal(self.eat())
+            return lambda row, c=ident, lo=low, hi=high: (
+                row.get(c) is not None and lo <= row.get(c) <= hi
+            )
         if op_upper == "IN":
             if self.eat() != "(":
                 raise ValueError("expected ( after IN")

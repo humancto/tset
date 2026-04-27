@@ -174,6 +174,37 @@ impl Reader {
                 return Err(TsetError::AuditLogIntegrityFailed);
             }
         }
+        // Strict v0.2 enforcement: every chunk in every view MUST carry
+        // a content_hash. Earlier this was checked only inside open_view,
+        // so a malformed v0.2 shard could be opened and the per-view
+        // mismatch would surface only when that view was used. Doing it
+        // at file-open time is the fail-fast posture for v0.2+.
+        if self.header.version_minor >= 2 {
+            if let Ok(views) = self.manifest.views() {
+                for (vid, view) in views {
+                    let chunks = view
+                        .get("chunks")
+                        .and_then(Value::as_array)
+                        .ok_or(TsetError::BadManifest("view.chunks"))?;
+                    for c in chunks {
+                        let has_hash = c
+                            .get("content_hash")
+                            .and_then(Value::as_str)
+                            .map(|s| !s.is_empty())
+                            .unwrap_or(false);
+                        if !has_hash {
+                            // Use BadManifest for parity with the existing
+                            // open_view error; carry the view id as breadcrumb.
+                            let _ = vid;
+                            return Err(TsetError::BadManifest(
+                                "v0.2 shard missing chunk.content_hash (file-open check)",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         // Full reproducibility check (SPEC §7 obligation #4): for each
         // view, rebuild a tokenizer from its config and re-tokenize the
         // test_vector documents, asserting the byte hash matches.
@@ -387,48 +418,117 @@ impl<'a> TokenizationView<'a> {
         Ok(out)
     }
 
-    /// Yields `(tokens, doc_hash)` per source-map entry.
+    /// Eager all-at-once view. Kept for compatibility with PR 1 callers
+    /// and the conformance suite. New code should prefer `iter_per_doc`
+    /// (lazy iterator) — this method materializes the entire result up
+    /// front and is O(shard size) in memory.
     pub fn iter_per_doc(&self) -> TsetResult<Vec<(Vec<u32>, Hash)>> {
+        self.iter_per_doc_lazy()?.collect()
+    }
+
+    /// Lazy iterator — yields one `(tokens, doc_hash)` per source-map
+    /// entry, decompressing chunks on demand and dropping previously-
+    /// touched chunks once we've moved past them. Memory footprint is
+    /// bounded to the current chunk + the previous one (for entries
+    /// that span a chunk boundary).
+    pub fn iter_per_doc_lazy(
+        &self,
+    ) -> TsetResult<impl Iterator<Item = TsetResult<(Vec<u32>, Hash)>> + '_> {
         let mut chunk_starts: Vec<u64> = Vec::with_capacity(self.chunks.len());
         let mut cum = 0u64;
         for c in &self.chunks {
             chunk_starts.push(cum);
             cum += c.num_tokens;
         }
-        let mut chunk_cache: HashMap<usize, Vec<u32>> = HashMap::new();
-        let mut out = Vec::with_capacity(self.source_map.len());
-        for entry in &self.source_map {
+        Ok(LazyDocIter {
+            view: self,
+            chunk_starts,
+            sm_idx: 0,
+            cache: BoundedChunkCache::new(),
+        })
+    }
+}
+
+/// Bounded two-slot LRU. Source-map entries are emitted in order, so a
+/// streaming reader only ever touches the current chunk and (briefly)
+/// the previous chunk while a doc spans the boundary.
+struct BoundedChunkCache {
+    a: Option<(usize, Vec<u32>)>,
+    b: Option<(usize, Vec<u32>)>,
+}
+
+impl BoundedChunkCache {
+    fn new() -> Self {
+        Self { a: None, b: None }
+    }
+    fn get(&self, idx: usize) -> Option<&Vec<u32>> {
+        if let Some((i, arr)) = &self.a {
+            if *i == idx {
+                return Some(arr);
+            }
+        }
+        if let Some((i, arr)) = &self.b {
+            if *i == idx {
+                return Some(arr);
+            }
+        }
+        None
+    }
+    fn put(&mut self, idx: usize, arr: Vec<u32>) {
+        // Move current-a into b (drop old b), put new entry in a.
+        self.b = self.a.take();
+        self.a = Some((idx, arr));
+    }
+}
+
+struct LazyDocIter<'a> {
+    view: &'a TokenizationView<'a>,
+    chunk_starts: Vec<u64>,
+    sm_idx: usize,
+    cache: BoundedChunkCache,
+}
+
+impl<'a> Iterator for LazyDocIter<'a> {
+    type Item = TsetResult<(Vec<u32>, Hash)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let entry = self.view.source_map.get(self.sm_idx)?;
+            self.sm_idx += 1;
             if entry.token_count == 0 {
                 continue;
             }
-            // locate first chunk
             let mut cid = 0usize;
-            while cid + 1 < chunk_starts.len() && chunk_starts[cid + 1] <= entry.token_offset {
+            while cid + 1 < self.chunk_starts.len()
+                && self.chunk_starts[cid + 1] <= entry.token_offset
+            {
                 cid += 1;
             }
             let mut remaining = entry.token_count;
             let mut cur = entry.token_offset;
             let mut piece: Vec<u32> = Vec::with_capacity(entry.token_count as usize);
             while remaining > 0 {
-                if !chunk_cache.contains_key(&cid) {
-                    let arr = read_chunk(
-                        self.mmap,
-                        self.view_offset,
-                        &self.chunks[cid],
-                        Some(self.vocab_size),
-                    )?;
-                    chunk_cache.insert(cid, arr);
+                if self.cache.get(cid).is_none() {
+                    let arr = match read_chunk(
+                        self.view.mmap,
+                        self.view.view_offset,
+                        &self.view.chunks[cid],
+                        Some(self.view.vocab_size),
+                    ) {
+                        Ok(a) => a,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    self.cache.put(cid, arr);
                 }
-                let arr = chunk_cache.get(&cid).unwrap();
-                let off = (cur - chunk_starts[cid]) as usize;
+                let arr = self.cache.get(cid).unwrap();
+                let off = (cur - self.chunk_starts[cid]) as usize;
                 let take = std::cmp::min(arr.len() - off, remaining as usize);
                 piece.extend_from_slice(&arr[off..off + take]);
                 cur += take as u64;
                 remaining -= take as u64;
                 cid += 1;
             }
-            out.push((piece, entry.doc_hash));
+            return Some(Ok((piece, entry.doc_hash)));
         }
-        Ok(out)
     }
 }

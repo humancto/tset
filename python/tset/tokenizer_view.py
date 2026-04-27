@@ -93,11 +93,15 @@ def build_view(
             )
             + compressed
         )
+        # v0.2: per-chunk content_hash = BLAKE3 of compressed payload.
+        # Reader verifies on read; mandatory for v0.2 shards.
+        content_hash_hex = hash_bytes(compressed).hex()
         chunks.append(
             ChunkInfo(
                 byte_offset_in_view=cursor_in_view,
                 compressed_size=len(compressed),
                 num_tokens=int(pending.size),
+                content_hash=content_hash_hex,
             )
         )
         chunk_payloads.append(chunk_payload)

@@ -240,3 +240,80 @@ def to_huggingface_dataset(tset_path: str, tokenizer_id: str = "byte-level-v1"):
         ) from e
     gen = hf_dataset_view(tset_path, tokenizer_id)
     return HFDataset.from_generator(gen)
+
+
+def tset_to_jsonl(
+    tset_path: str,
+    jsonl_path: str,
+    content_field: str = "text",
+    include_doc_hash: bool = True,
+    include_metadata: bool = True,
+) -> dict:
+    """Reverse converter: TSET shard → newline-delimited JSON.
+
+    Each output line is a JSON object containing the document body under
+    `content_field` (decoded as UTF-8 with `errors='replace'`), the doc
+    hash hex (if `include_doc_hash`), and any metadata columns the writer
+    recorded (if `include_metadata`).
+
+    Useful for migrating off TSET, interop with line-oriented tools
+    (jq, datasets-script, dvc), and quick-inspecting a corpus.
+    """
+    from tset.reader import Reader
+
+    n = 0
+    with Reader(tset_path) as r, open(jsonl_path, "w", encoding="utf-8") as f:
+        cols = r.metadata_columns() if include_metadata else None
+        ordered = r.doc_order_hex() or list(
+            r.manifest["document_store"]["document_index"].keys()
+        )
+        for i, h_hex in enumerate(ordered):
+            h = bytes.fromhex(h_hex)
+            body = r.get_document(h).decode("utf-8", errors="replace")
+            obj = {content_field: body}
+            if include_doc_hash:
+                obj["doc_hash"] = h_hex
+            if cols is not None and i < cols.row_count:
+                for name in cols.names():
+                    obj[name] = cols.column(name)[i]
+            f.write(json.dumps(obj) + "\n")
+            n += 1
+    return {"input": tset_path, "output": jsonl_path, "documents": n}
+
+
+def tset_to_parquet(
+    tset_path: str,
+    parquet_path: str,
+    content_column: str = "text",
+) -> dict:
+    """Reverse converter: TSET shard → Parquet (pyarrow). One row per
+    document. Columns: <content_column> (string) + all metadata columns
+    + doc_hash (string)."""
+    try:
+        import pyarrow as pa  # type: ignore[import-not-found]
+        import pyarrow.parquet as pq  # type: ignore[import-not-found]
+    except ImportError as e:
+        raise RuntimeError(
+            "tset_to_parquet requires pyarrow; install with `pip install pyarrow`"
+        ) from e
+    from tset.reader import Reader
+
+    rows: dict[str, list] = {content_column: [], "doc_hash": []}
+    with Reader(tset_path) as r:
+        cols = r.metadata_columns()
+        for name in cols.names():
+            rows[name] = []
+        ordered = r.doc_order_hex() or list(
+            r.manifest["document_store"]["document_index"].keys()
+        )
+        for i, h_hex in enumerate(ordered):
+            h = bytes.fromhex(h_hex)
+            rows[content_column].append(
+                r.get_document(h).decode("utf-8", errors="replace")
+            )
+            rows["doc_hash"].append(h_hex)
+            for name in cols.names():
+                rows[name].append(cols.column(name)[i] if i < cols.row_count else None)
+    table = pa.table(rows)
+    pq.write_table(table, parquet_path)
+    return {"input": tset_path, "output": parquet_path, "documents": len(rows[content_column])}

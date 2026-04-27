@@ -140,6 +140,8 @@ enum Atom {
     Cmp { col: String, op: Op, rhs: Value },
     In { col: String, set: Vec<Value> },
     Like { col: String, pattern: regex::Regex },
+    Between { col: String, low: Value, high: Value },
+    IsNull { col: String, negated: bool },
 }
 
 #[derive(Debug)]
@@ -147,6 +149,7 @@ enum Node {
     Atom(Atom),
     And(Box<Node>, Box<Node>),
     Or(Box<Node>, Box<Node>),
+    Not(Box<Node>),
 }
 
 pub struct Predicate {
@@ -163,6 +166,7 @@ fn eval_node(node: &Node, getter: &dyn Fn(&str) -> Value) -> bool {
     match node {
         Node::And(l, r) => eval_node(l, getter) && eval_node(r, getter),
         Node::Or(l, r) => eval_node(l, getter) || eval_node(r, getter),
+        Node::Not(n) => !eval_node(n, getter),
         Node::Atom(a) => eval_atom(a, getter),
     }
 }
@@ -179,6 +183,15 @@ fn eval_atom(atom: &Atom, getter: &dyn Fn(&str) -> Value) -> bool {
                 Some(s) => pattern.is_match(s),
                 None => false,
             }
+        }
+        Atom::Between { col, low, high } => {
+            let v = getter(col);
+            (compare_gt(&v, low) || values_equal(&v, low))
+                && (compare_lt(&v, high) || values_equal(&v, high))
+        }
+        Atom::IsNull { col, negated } => {
+            let is_null = matches!(getter(col), Value::Null);
+            if *negated { !is_null } else { is_null }
         }
         Atom::Cmp { col, op, rhs } => {
             let v = getter(col);
@@ -373,6 +386,14 @@ impl Parser {
         Ok(left)
     }
     fn parse_atom(&mut self) -> TsetResult<Node> {
+        // NOT <atom>
+        if let Some(t) = self.peek() {
+            if t.eq_ignore_ascii_case("NOT") {
+                self.eat()?;
+                let inner = self.parse_atom()?;
+                return Ok(Node::Not(Box::new(inner)));
+            }
+        }
         if self.peek() == Some("(") {
             self.eat()?;
             let inner = self.parse_or()?;
@@ -387,6 +408,33 @@ impl Parser {
         }
         let op = self.eat()?;
         let op_upper = op.to_ascii_uppercase();
+        // <ident> IS [NOT] NULL
+        if op_upper == "IS" {
+            let next = self.eat()?;
+            let next_upper = next.to_ascii_uppercase();
+            let negated = if next_upper == "NOT" {
+                let null = self.eat()?;
+                if !null.eq_ignore_ascii_case("NULL") {
+                    return Err(TsetError::BadManifest("expected NULL after IS NOT"));
+                }
+                true
+            } else if next_upper == "NULL" {
+                false
+            } else {
+                return Err(TsetError::BadManifest("expected NULL or NOT NULL after IS"));
+            };
+            return Ok(Node::Atom(Atom::IsNull { col: ident, negated }));
+        }
+        // <ident> BETWEEN <lit> AND <lit>
+        if op_upper == "BETWEEN" {
+            let low = parse_literal(&self.eat()?)?;
+            let and_kw = self.eat()?;
+            if !and_kw.eq_ignore_ascii_case("AND") {
+                return Err(TsetError::BadManifest("expected AND in BETWEEN"));
+            }
+            let high = parse_literal(&self.eat()?)?;
+            return Ok(Node::Atom(Atom::Between { col: ident, low, high }));
+        }
         if op_upper == "IN" {
             if self.eat()? != "(" {
                 return Err(TsetError::BadManifest("expected ( after IN"));
@@ -446,7 +494,8 @@ fn is_ident(s: &str) -> bool {
     let upper = s.to_ascii_uppercase();
     if matches!(
         upper.as_str(),
-        "AND" | "OR" | "IN" | "LIKE" | "TRUE" | "FALSE" | "NULL"
+        "AND" | "OR" | "NOT" | "IN" | "IS" | "LIKE" | "BETWEEN"
+            | "TRUE" | "FALSE" | "NULL"
     ) {
         return false;
     }

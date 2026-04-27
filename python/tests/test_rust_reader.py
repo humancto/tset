@@ -37,7 +37,7 @@ def test_rust_reader_opens_python_shard(rs_shard):
     p, _ = rs_shard
     r = tset_rs.Reader(p)
     assert r.version_major == 0
-    assert r.version_minor == 1  # python writer on this branch is still v0.1
+    assert r.version_minor == 2  # python writer emits v0.2 since PR 7
     assert r.tokenizer_ids() == ["byte-level-v1"]
 
 
