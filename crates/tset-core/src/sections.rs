@@ -183,3 +183,139 @@ mod tests {
         ));
     }
 }
+
+// ---------------------------------------------------------------------
+// TLOG — on-disk audit log section
+// ---------------------------------------------------------------------
+
+use serde_json::Value;
+
+use crate::constants::MAGIC_AUDIT_LOG;
+
+/// On-disk audit log section (`TLOG`):
+///
+/// ```text
+/// [0:4]    magic         = b"TLOG"
+/// [4:5]    log_version   = u8 (1 = chained-blake3)
+/// [5:8]    reserved      = zeros
+/// [8:16]   payload_size  = u64 LE
+/// [16:48]  log_root      = 32 bytes (BLAKE3, last entry's chained_root)
+/// [48:80]  content_hash  = BLAKE3 over the JSON payload that follows
+/// [80..80+payload_size]  = canonical JSON (sort_keys, sep=(",",":"))
+/// ```
+///
+/// The payload is the same canonical JSON the in-manifest form uses,
+/// just relocated to its own section so the manifest hash check stays
+/// O(metadata size) instead of O(audit log size). Once on-disk is
+/// mandatory (v0.4) the in-manifest form goes away.
+pub const TLOG_VERSION: u8 = 1;
+pub const TLOG_HEADER_SIZE: usize = 80;
+
+pub fn encode_tlog_section(audit_json: &Value, log_root: &Hash) -> Vec<u8> {
+    let canon = crate::tokenizers::canonical_json(audit_json);
+    let payload = canon.into_bytes();
+    let content_hash = hash_bytes(&payload);
+
+    let mut out = Vec::with_capacity(TLOG_HEADER_SIZE + payload.len());
+    out.extend_from_slice(MAGIC_AUDIT_LOG);
+    out.push(TLOG_VERSION);
+    out.extend_from_slice(&[0u8; 3]);
+    out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    out.extend_from_slice(log_root);
+    out.extend_from_slice(&content_hash);
+    out.extend_from_slice(&payload);
+    out
+}
+
+pub struct TlogSection {
+    pub log_version: u8,
+    pub log_root: Hash,
+    pub content_hash: Hash,
+    pub audit_json: Value,
+}
+
+pub fn decode_tlog_section(bytes: &[u8]) -> TsetResult<TlogSection> {
+    if bytes.len() < TLOG_HEADER_SIZE {
+        return Err(TsetError::BadManifest("TLOG section truncated"));
+    }
+    let mut magic = [0u8; 4];
+    magic.copy_from_slice(&bytes[0..4]);
+    if &magic != MAGIC_AUDIT_LOG {
+        return Err(TsetError::BadManifest("TLOG bad magic"));
+    }
+    let log_version = bytes[4];
+    if log_version != TLOG_VERSION {
+        return Err(TsetError::BadManifest("TLOG unsupported log_version"));
+    }
+    let payload_size = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
+    let mut log_root = [0u8; HASH_SIZE];
+    log_root.copy_from_slice(&bytes[16..48]);
+    let mut content_hash = [0u8; HASH_SIZE];
+    content_hash.copy_from_slice(&bytes[48..80]);
+    let payload_end = TLOG_HEADER_SIZE
+        .checked_add(payload_size)
+        .ok_or(TsetError::BadManifest("TLOG payload range overflow"))?;
+    if payload_end > bytes.len() {
+        return Err(TsetError::BadManifest("TLOG payload exceeds section"));
+    }
+    let payload = &bytes[TLOG_HEADER_SIZE..payload_end];
+    if hash_bytes(payload) != content_hash {
+        return Err(TsetError::BadManifest("TLOG content_hash mismatch"));
+    }
+    let audit_json: Value = serde_json::from_slice(payload)?;
+    Ok(TlogSection {
+        log_version,
+        log_root,
+        content_hash,
+        audit_json,
+    })
+}
+
+#[cfg(test)]
+mod tlog_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn round_trip_empty_log() {
+        let audit = json!({"entries": [], "log_root": ""});
+        let bytes = encode_tlog_section(&audit, &[0u8; 32]);
+        let dec = decode_tlog_section(&bytes).unwrap();
+        assert_eq!(dec.log_root, [0u8; 32]);
+        assert_eq!(dec.audit_json, audit);
+    }
+
+    #[test]
+    fn round_trip_with_entries() {
+        let audit = json!({
+            "entries": [
+                {
+                    "seq": 0,
+                    "timestamp": 1700000000.0,
+                    "event_type": "ingestion",
+                    "payload": {"size": 100},
+                    "prev_root": "",
+                    "entry_hash": "ab",
+                    "chained_root": "cd",
+                }
+            ],
+            "log_root": "cd",
+        });
+        let mut root = [0u8; 32];
+        root[0] = 0xcd;
+        let bytes = encode_tlog_section(&audit, &root);
+        let dec = decode_tlog_section(&bytes).unwrap();
+        assert_eq!(dec.log_root, root);
+        assert_eq!(dec.audit_json, audit);
+    }
+
+    #[test]
+    fn rejects_tampered_payload() {
+        let audit = json!({"entries": [], "log_root": ""});
+        let mut bytes = encode_tlog_section(&audit, &[0u8; 32]);
+        let n = bytes.len();
+        bytes[n - 1] ^= 0xff;
+        // Either content_hash mismatch or JSON parse error — both Err
+        assert!(decode_tlog_section(&bytes).is_err());
+    }
+}
