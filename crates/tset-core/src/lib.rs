@@ -59,6 +59,7 @@ pub mod audit_log;
 pub mod signing;
 pub mod columns;
 pub mod mixture;
+pub mod object_store;
 pub mod reader;
 pub mod writer;
 pub mod dataset;
