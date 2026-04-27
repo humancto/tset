@@ -9,6 +9,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 
 use tset_core::reader::Reader as CoreReader;
+use tset_core::tokenizers::{ByteLevelTokenizer, Tokenizer, WhitespaceTokenizer};
+use tset_core::writer::Writer as CoreWriter;
 use tset_core::TsetError;
 
 fn map_err(e: TsetError) -> PyErr {
@@ -109,9 +111,67 @@ impl PyReader {
     }
 }
 
+#[pyclass(name = "Writer", module = "tset._rs")]
+pub struct PyWriter {
+    // Option so we can take it on close()
+    inner: Option<CoreWriter>,
+}
+
+#[pymethods]
+impl PyWriter {
+    #[new]
+    #[pyo3(signature = (path, shard_id=None))]
+    fn new(path: &str, shard_id: Option<String>) -> Self {
+        Self {
+            inner: Some(CoreWriter::create(path, shard_id)),
+        }
+    }
+
+    fn add_document<'py>(
+        &mut self,
+        py: Python<'py>,
+        content: &[u8],
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let w = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
+        let h = w.add_document(content).map_err(map_err)?;
+        Ok(PyBytes::new_bound(py, &h))
+    }
+
+    /// `tokenizer_spec` is a (id, vocab_size) tuple. v0.2 supports
+    /// "byte-level-v1" and "whitespace-hashed-v1".
+    fn add_tokenizer_view(&mut self, tokenizer_id: &str, vocab_size: u32) -> PyResult<()> {
+        let w = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
+        let tok: Box<dyn Tokenizer> = match tokenizer_id {
+            ByteLevelTokenizer::ID => Box::new(ByteLevelTokenizer),
+            WhitespaceTokenizer::ID => Box::new(WhitespaceTokenizer::new(vocab_size).map_err(map_err)?),
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown tokenizer_id: {other}"
+                )))
+            }
+        };
+        w.add_tokenizer_view(tok).map_err(map_err)
+    }
+
+    fn close(&mut self) -> PyResult<()> {
+        let w = self
+            .inner
+            .take()
+            .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
+        w.close().map_err(map_err)
+    }
+}
+
 #[pymodule]
 fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyReader>()?;
+    m.add_class::<PyWriter>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

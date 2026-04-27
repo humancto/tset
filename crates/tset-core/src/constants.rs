@@ -18,3 +18,5 @@ pub const CHUNK_HEADER_SIZE: usize = 24;
 
 /// Token IDs are stored as little-endian u32 in v0.1/v0.2.
 pub const TOKEN_BYTES: usize = 4;
+
+pub const ZSTD_LEVEL: i32 = 6;

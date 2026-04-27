@@ -11,10 +11,13 @@ pub mod header;
 pub mod footer;
 pub mod manifest;
 pub mod document_store;
+pub mod tokenizers;
 pub mod tokenizer_view;
 pub mod smt;
 pub mod audit_log;
 pub mod reader;
+pub mod writer;
 
 pub use error::{TsetError, TsetResult};
 pub use reader::Reader;
+pub use writer::Writer;

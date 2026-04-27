@@ -174,38 +174,35 @@ impl Reader {
                 return Err(TsetError::AuditLogIntegrityFailed);
             }
         }
-        // Partial reproducibility check (full retokenization is PR 2 — needs
-        // a Rust tokenizer trait). For each view, confirm the test_vector's
-        // doc_hashes are present in the document store and the structure
-        // is well-formed. The Python reader runs the full check; the Rust
-        // reader will once tokenizers land.
+        // Full reproducibility check (SPEC §7 obligation #4): for each
+        // view, rebuild a tokenizer from its config and re-tokenize the
+        // test_vector documents, asserting the byte hash matches.
         if let Ok(views) = self.manifest.views() {
-            for (id, view) in views {
+            for (_id, view) in views {
                 if let Some(tv) = view.get("test_vector") {
-                    let docs = tv
+                    let cfg = view
+                        .get("tokenizer_config")
+                        .ok_or(TsetError::BadManifest("view.tokenizer_config"))?;
+                    let tokenizer = crate::tokenizers::tokenizer_from_config(cfg)?;
+                    let mut docs_map: std::collections::HashMap<Hash, Vec<u8>> =
+                        std::collections::HashMap::new();
+                    let doc_hashes = tv
                         .get("doc_hashes")
                         .and_then(Value::as_array)
                         .ok_or(TsetError::BadManifest("view.test_vector.doc_hashes"))?;
-                    for h in docs {
-                        let hex = h.as_str().ok_or(TsetError::BadManifest(
+                    for h in doc_hashes {
+                        let hex_str = h.as_str().ok_or(TsetError::BadManifest(
                             "view.test_vector.doc_hashes[i]",
                         ))?;
-                        let key = parse_hash(hex, "test_vector doc_hash")?;
-                        if !self.index.contains_key(&key) {
-                            return Err(TsetError::BadManifest(
-                                "test_vector references missing doc",
-                            ));
-                        }
+                        let key = parse_hash(hex_str, "test_vector doc_hash")?;
+                        let content = self.get_document(&key)?;
+                        docs_map.insert(key, content);
                     }
-                    // Ensure the expected hash field exists; full verify deferred.
-                    if tv.get("expected_token_arrays_hash").is_none() {
-                        return Err(TsetError::BadManifest(
-                            "view.test_vector missing expected_token_arrays_hash",
-                        ));
-                    }
-                    // Suppress unused warning when the only purpose of `id`
-                    // is the better error context callers may want later.
-                    let _ = id;
+                    crate::tokenizers::verify_reproducibility(
+                        tokenizer.as_ref(),
+                        tv,
+                        &docs_map,
+                    )?;
                 }
             }
         }

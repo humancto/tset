@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] — 2026-04-27
+
+Rust port plus per-chunk content hashing.
+
+### Format
+
+- `version_minor = 2`. v0.2 readers accept v0.1 shards (forward-compat);
+  v0.1 readers reject v0.2 (per RFC §5.6 #6).
+- Per-chunk `content_hash` (BLAKE3 of compressed payload) is now mandatory
+  in tokenization views. Readers MUST verify on read. Closes the chunk-body
+  tamper gap from the v0.1 self-review.
+- `python.tset.tokenizer_view.ChunkInfo` adds `content_hash: str | None`,
+  defaulted None for v0.1 compat.
+
+### Rust port (PR 2 — writer + features)
+
+- `tset-core::Writer`, `DocumentStoreWriter`, `tokenizer_view::build_view`
+  (chunked tokens + source map + sparse index + per-chunk content hashing)
+- `tset-core::SparseMerkleTree` insert + prove (matches Python wire format
+  exactly: `LEAF_PREFIX=0x10`, `INTERNAL_PREFIX=0x11`, MSB-first bit order)
+- `tset-core::AuditLog::append` with chained-hash construction
+- `tset-core::tokenizers`: `Tokenizer` trait + `ByteLevelTokenizer` +
+  `WhitespaceTokenizer` + `reproducibility_test_vector` /
+  `verify_reproducibility`
+- `tset-core::Reader` now runs the **full** reproducibility check on open
+  (replaces the partial check from PR 1)
+- `tset-py` exposes `Writer` to Python (`add_document`,
+  `add_tokenizer_view`, `close`)
+- New cross-impl tests in `python/tests/test_rust_writer.py`:
+  - Rust writer → Python reader (4 tests)
+  - Rust writer → Rust reader (1 test)
+  - Whitespace tokenizer parity, content-hash presence, ordering invariant
+- `crates/tset-core/tests/roundtrip.rs`: Rust writer ↔ Rust reader
+
+### Hashing
+
+- `tset-core::shard_merkle_root` now sorts inputs (per SPEC §6),
+  matching Python's order-independent semantics. The earlier Rust verifier
+  hashed insertion order — that worked because PR 1 only verified
+  Python-written shards (where the JSON-sort-keys made order alphabetical
+  through a different path), but the Rust writer made the discrepancy
+  visible.
+
+### Test totals
+
+- 25 Rust tests (18 unit + 5 malformed-input fuzz + 2 roundtrip)
+- 68 Python tests (5 cross-impl Rust-reader + 7 cross-impl Rust-writer
+  + 56 existing)
+- All stable across 10 trials
+
+### Deferred to PR 3
+
+- DatasetWriter (multi-shard) in Rust
+- MetadataColumns + predicate compiler in Rust
+- Mixture / WeightedSampler in Rust
+- Drop legacy Python writer/reader; re-export from tset_rs
+- tset-converters (jsonl, parquet, mds, webdataset)
+- tset-cli, tset-bench (criterion benches A/B/C/D/E)
+
 ## [0.1.0] — 2026-04-27
 
 Initial public RFC v0.4 + reference implementation. Single batch covering the

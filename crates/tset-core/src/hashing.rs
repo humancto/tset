@@ -7,17 +7,21 @@ pub fn hash_bytes(data: &[u8]) -> Hash {
     *blake3::hash(data).as_bytes()
 }
 
-/// Domain-separated Merkle root over an ordered list of leaf hashes.
-/// Matches the Python implementation:
+/// Per SPEC §6: balanced binary Merkle tree over **sorted** doc hashes.
 /// - empty input → 32 zero bytes
-/// - leaf node = hash(0x00 || leaf)
+/// - leaf node     = hash(0x00 || leaf)
 /// - internal node = hash(0x01 || left || right)
 /// - odd levels duplicate the last hash (Bitcoin-style)
+///
+/// Sorting is what makes the root order-independent across writer/reader
+/// (writer sees insertion order; reader sees JSON-sort-keys order).
 pub fn shard_merkle_root(leaves: &[Hash]) -> Hash {
     if leaves.is_empty() {
         return [0u8; HASH_SIZE];
     }
-    let mut level: Vec<Hash> = leaves
+    let mut sorted: Vec<Hash> = leaves.to_vec();
+    sorted.sort();
+    let mut level: Vec<Hash> = sorted
         .iter()
         .map(|h| {
             let mut buf = Vec::with_capacity(1 + HASH_SIZE);
