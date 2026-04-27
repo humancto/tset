@@ -60,6 +60,42 @@ fn writer_with_binary_sections_round_trip() {
 }
 
 #[test]
+fn reader_smt_root_resolves_from_on_disk_section_when_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ondisk.tset");
+
+    let mut w = Writer::create(&path, None);
+    w.enable_binary_sections();
+    w.add_document(b"alpha").unwrap();
+    w.add_document(b"beta").unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+
+    let r = Reader::open(&path).unwrap();
+    let on_disk_root = r.on_disk_smt().unwrap().unwrap().smt_root;
+    let smt_root = r.smt_root();
+    assert_eq!(on_disk_root, smt_root);
+
+    // TLOG / TCOL accessors return Some when the section is present
+    assert!(r.on_disk_audit_log().unwrap().is_some());
+    assert!(r.on_disk_columns().unwrap().is_some());
+}
+
+#[test]
+fn reader_returns_none_for_on_disk_sections_when_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plain2.tset");
+    let mut w = Writer::create(&path, None);
+    w.add_document(b"x").unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+    let r = Reader::open(&path).unwrap();
+    assert!(r.on_disk_smt().unwrap().is_none());
+    assert!(r.on_disk_audit_log().unwrap().is_none());
+    assert!(r.on_disk_columns().unwrap().is_none());
+}
+
+#[test]
 fn writer_default_does_not_emit_binary_sections() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("plain.tset");

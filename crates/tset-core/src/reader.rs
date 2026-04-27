@@ -285,11 +285,100 @@ impl Reader {
         &self.path
     }
 
-    /// Reconstruct the shard's SMT root either from the manifest's
-    /// `smt_root` field (cheap path) or by replaying `smt_present_keys`
-    /// (fallback). The two MUST agree on a well-formed shard.
+    /// Decode the on-disk TSMT section if the manifest references one
+    /// (v0.4-style shards written with `Writer.enable_binary_sections`).
+    /// Returns `Ok(None)` if no section pointer is in the manifest.
+    pub fn on_disk_smt(&self) -> TsetResult<Option<crate::sections::TsmtSection>> {
+        let raw = self.manifest.raw();
+        let Some(ptr) = raw.get("smt_section") else {
+            return Ok(None);
+        };
+        let off = ptr
+            .get("offset")
+            .and_then(Value::as_u64)
+            .ok_or(TsetError::BadManifest("smt_section.offset"))? as usize;
+        let size = ptr
+            .get("size")
+            .and_then(Value::as_u64)
+            .ok_or(TsetError::BadManifest("smt_section.size"))? as usize;
+        let end = off
+            .checked_add(size)
+            .ok_or(TsetError::BadManifest("smt_section range overflow"))?;
+        if end > self.mmap.len() {
+            return Err(TsetError::BadManifest("smt_section exceeds file"));
+        }
+        Ok(Some(crate::sections::decode_tsmt_section(
+            &self.mmap[off..end],
+        )?))
+    }
+
+    /// Decode the on-disk TLOG section if present.
+    pub fn on_disk_audit_log(
+        &self,
+    ) -> TsetResult<Option<crate::sections::TlogSection>> {
+        let raw = self.manifest.raw();
+        let Some(ptr) = raw.get("audit_log_section") else {
+            return Ok(None);
+        };
+        let off = ptr
+            .get("offset")
+            .and_then(Value::as_u64)
+            .ok_or(TsetError::BadManifest("audit_log_section.offset"))? as usize;
+        let size = ptr
+            .get("size")
+            .and_then(Value::as_u64)
+            .ok_or(TsetError::BadManifest("audit_log_section.size"))? as usize;
+        let end = off
+            .checked_add(size)
+            .ok_or(TsetError::BadManifest("audit_log_section range overflow"))?;
+        if end > self.mmap.len() {
+            return Err(TsetError::BadManifest("audit_log_section exceeds file"));
+        }
+        Ok(Some(crate::sections::decode_tlog_section(
+            &self.mmap[off..end],
+        )?))
+    }
+
+    /// Decode the on-disk TCOL section if present.
+    pub fn on_disk_columns(
+        &self,
+    ) -> TsetResult<Option<crate::sections::TcolSection>> {
+        let raw = self.manifest.raw();
+        let Some(ptr) = raw.get("metadata_columns_section") else {
+            return Ok(None);
+        };
+        let off = ptr
+            .get("offset")
+            .and_then(Value::as_u64)
+            .ok_or(TsetError::BadManifest("metadata_columns_section.offset"))? as usize;
+        let size = ptr
+            .get("size")
+            .and_then(Value::as_u64)
+            .ok_or(TsetError::BadManifest("metadata_columns_section.size"))? as usize;
+        let end = off
+            .checked_add(size)
+            .ok_or(TsetError::BadManifest(
+                "metadata_columns_section range overflow",
+            ))?;
+        if end > self.mmap.len() {
+            return Err(TsetError::BadManifest(
+                "metadata_columns_section exceeds file",
+            ));
+        }
+        Ok(Some(crate::sections::decode_tcol_section(
+            &self.mmap[off..end],
+        )?))
+    }
+
+    /// Reconstruct the shard's SMT root. Resolution order:
+    /// 1. On-disk TSMT section (`smt_section` manifest pointer)
+    /// 2. Manifest's `smt_root` hex field (current default)
+    /// 3. Replay manifest's `smt_present_keys` array (fallback)
     pub fn smt_root(&self) -> Hash {
-        if let Some(s) = self.manifest.smt_root_hex() {
+        if let Ok(Some(section)) = self.on_disk_smt() {
+            return section.smt_root;
+        }
+        if let Some(s) = self.manifest.smt_root_hex() {  // legacy
             if let Ok(b) = hex::decode(s) {
                 if b.len() == 32 {
                     let mut h = [0u8; 32];
