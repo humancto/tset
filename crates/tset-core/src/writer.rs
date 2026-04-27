@@ -17,12 +17,14 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Map, Value};
 
 use crate::audit_log::AuditLog;
+use crate::columns::MetadataColumns;
 use crate::constants::{HASH_SIZE, HEADER_SIZE, TRUNCATED_HASH_SIZE, VERSION_MAJOR, VERSION_MINOR};
 use crate::document_store::DocumentStoreWriter;
 use crate::error::{TsetError, TsetResult};
 use crate::footer::Footer;
 use crate::hashing::{hash_bytes, shard_merkle_root, Hash};
 use crate::header::Header;
+use crate::mixture::Subset;
 use crate::smt::SparseMerkleTree;
 use crate::tokenizer_view::{
     build_view, DEFAULT_SPARSE_INDEX_INTERVAL, DEFAULT_TOKEN_CHUNK_SIZE,
@@ -38,6 +40,8 @@ pub struct Writer {
     views: Vec<Box<dyn Tokenizer>>,
     smt: SparseMerkleTree,
     audit: AuditLog,
+    columns: MetadataColumns,
+    subsets: Vec<Subset>,
 }
 
 impl Writer {
@@ -52,10 +56,25 @@ impl Writer {
             views: Vec::new(),
             smt: SparseMerkleTree::new(),
             audit: AuditLog::new(),
+            columns: MetadataColumns::new(),
+            subsets: Vec::new(),
         }
     }
 
     pub fn add_document(&mut self, content: &[u8]) -> TsetResult<Hash> {
+        self.add_document_with_metadata(content, None)
+    }
+
+    /// Add a document with optional metadata. `metadata` is a JSON object
+    /// whose keys become column names; values are stored verbatim.
+    /// Mirrors Python `Writer.add_document(content, metadata={...})`.
+    /// Per the v0.2 ordering invariant, must be called before any
+    /// `add_tokenizer_view`.
+    pub fn add_document_with_metadata(
+        &mut self,
+        content: &[u8],
+        metadata: Option<&Map<String, Value>>,
+    ) -> TsetResult<Hash> {
         if !self.views.is_empty() {
             return Err(TsetError::BadManifest(
                 "add_document() called after add_tokenizer_view()",
@@ -73,7 +92,17 @@ impl Writer {
             json!({"doc_hash": hex::encode(h), "size": content.len()}),
             current_timestamp(),
         );
+        let empty = Map::new();
+        self.columns.add_row(metadata.unwrap_or(&empty));
         Ok(h)
+    }
+
+    pub fn add_subset(&mut self, name: &str, predicate: &str, default_weight: f64) {
+        self.subsets.push(Subset {
+            name: name.to_string(),
+            predicate: predicate.to_string(),
+            default_weight,
+        });
     }
 
     pub fn add_tokenizer_view(&mut self, tokenizer: Box<dyn Tokenizer>) -> TsetResult<()> {
@@ -108,6 +137,8 @@ impl Writer {
             views,
             smt,
             mut audit,
+            columns,
+            subsets,
             ..
         } = self;
 
@@ -257,14 +288,11 @@ impl Writer {
         manifest.insert("shard_merkle_root".into(), json!(hex::encode(merkle)));
         manifest.insert("smt_root".into(), json!(hex::encode(smt_root)));
         manifest.insert("audit_log".into(), audit.to_json());
+        manifest.insert("metadata_columns".into(), columns.to_json());
         manifest.insert(
-            "metadata_columns".into(),
-            json!({
-                "row_count": doc_order.len(),
-                "columns": {},
-            }),
+            "subsets".into(),
+            Value::Array(subsets.iter().map(Subset::to_json).collect()),
         );
-        manifest.insert("subsets".into(), json!([]));
         manifest.insert(
             "smt_present_keys".into(),
             json!(smt.present_keys()
