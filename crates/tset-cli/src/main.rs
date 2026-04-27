@@ -99,34 +99,42 @@ fn convert_jsonl(args: &[&str]) -> Result<(), String> {
     let src = args[0];
     let dst = args[1];
 
-    // Parse optional flags
+    // Parse optional flags. Supports both `--flag value` (two args) and
+    // `--flag=value` (single arg with `=`).
     let mut text_field = "text".to_string();
     let mut tokenizer_id = ByteLevelTokenizer::ID.to_string();
     let mut vocab_size: u32 = 0;
     let mut i = 2;
     while i < args.len() {
-        match args[i] {
+        let raw = args[i];
+        let (flag, inline_value): (&str, Option<&str>) = match raw.find('=') {
+            Some(eq) => (&raw[..eq], Some(&raw[eq + 1..])),
+            None => (raw, None),
+        };
+        let take_value = |name: &str| -> Result<String, String> {
+            if let Some(v) = inline_value {
+                Ok(v.to_string())
+            } else {
+                args.get(i + 1)
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| format!("{name} needs a value"))
+            }
+        };
+        let advance = if inline_value.is_some() { 1 } else { 2 };
+        match flag {
             "--text-field" => {
-                text_field = args
-                    .get(i + 1)
-                    .ok_or("--text-field needs a value")?
-                    .to_string();
-                i += 2;
+                text_field = take_value("--text-field")?;
+                i += advance;
             }
             "--tokenizer" => {
-                tokenizer_id = args
-                    .get(i + 1)
-                    .ok_or("--tokenizer needs a value")?
-                    .to_string();
-                i += 2;
+                tokenizer_id = take_value("--tokenizer")?;
+                i += advance;
             }
             "--vocab" => {
-                vocab_size = args
-                    .get(i + 1)
-                    .ok_or("--vocab needs a value")?
+                vocab_size = take_value("--vocab")?
                     .parse()
                     .map_err(|_| "invalid --vocab".to_string())?;
-                i += 2;
+                i += advance;
             }
             other => return Err(format!("convert jsonl: unknown flag {other:?}")),
         }

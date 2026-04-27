@@ -82,6 +82,10 @@ class Reader:
             for h, v in M.manifest_get_doc_index(self.manifest).items()
         }
         self._docs = DocumentStoreReader(self._mm, self._blocks, self._index)
+        # Lazily-cached Rust reader (tset_rs.Reader) for the streaming hot
+        # path. Built on first use so opening a Python Reader doesn't pay
+        # the cost when the Rust path won't be used.
+        self._rs_reader = None  # type: ignore[assignment]
         self._verify_invariants()
 
     def _verify_invariants(self) -> None:
@@ -103,6 +107,7 @@ class Reader:
             self._mm.close()
         finally:
             self._file.close()
+            self._rs_reader = None
 
     def __enter__(self) -> "Reader":
         return self
@@ -158,8 +163,9 @@ class Reader:
     ) -> Iterator[tuple[np.ndarray, bytes]]:
         import tset_rs  # type: ignore[import-not-found]
 
-        rs = tset_rs.Reader(self.path)
-        for tokens_bytes, doc_hash in rs.stream_tokens(tokenizer_id):
+        if self._rs_reader is None:
+            self._rs_reader = tset_rs.Reader(self.path)
+        for tokens_bytes, doc_hash in self._rs_reader.stream_tokens(tokenizer_id):
             arr = np.frombuffer(tokens_bytes, dtype=np.uint32)
             for i in range(0, int(arr.size), batch_size):
                 yield arr[i : i + batch_size], bytes(doc_hash)

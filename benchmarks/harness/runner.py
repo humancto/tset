@@ -206,7 +206,12 @@ def benchmark_streaming(records: list[CorpusRecord]) -> dict:
         "py_pct_of_raw": round(py_tps / raw_tps, 4) if raw_tps else None,
         "v02_target_pct": 0.7,
         "v1_target_pct": 0.85,
-        "note": "single-process; full Benchmark B requires multi-node S3",
+        "note": (
+            "single-process; full Benchmark B requires multi-node S3. "
+            "Both readers run back-to-back in one process so the second "
+            "benefits from a warm OS page cache; treat the rust/py ratio "
+            "as a lower bound on the real cold-cache speedup."
+        ),
     }
     if rust_available and rust_tps is not None:
         out["rust_reader_tokens_per_sec"] = int(rust_tps)

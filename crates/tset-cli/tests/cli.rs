@@ -57,3 +57,22 @@ fn verify_missing_file_returns_nonzero() {
     let out = cli().args(["verify", "/no/such/path"]).output().unwrap();
     assert!(!out.status.success());
 }
+
+#[test]
+fn convert_supports_inline_flag_equals_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("in.jsonl");
+    let dst = dir.path().join("ws.tset");
+    std::fs::write(&src, "{\"text\": \"alpha beta gamma\"}\n").unwrap();
+    let out = cli()
+        .args(["convert", "jsonl"])
+        .arg(&src)
+        .arg(&dst)
+        .args(["--tokenizer=whitespace-hashed-v1", "--vocab=512"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "convert failed: {out:?}");
+    let inspect = cli().arg("inspect").arg(&dst).output().unwrap();
+    let s = String::from_utf8_lossy(&inspect.stdout);
+    assert!(s.contains("whitespace-hashed-v1"));
+}
