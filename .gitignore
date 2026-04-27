@@ -7,6 +7,13 @@ __pycache__/
 benchmarks/results/
 benchmarks/corpus/
 
-# Rust
+# Rust build artifacts
 target/
+
+# Workspace mixes libs (tset-core, tset-py) and a binary (tset-cli) +
+# benches. We follow the cargo book's recommendation: commit the
+# lockfile because tset-cli is a binary product. Library consumers of
+# tset-core / tset-py compute their own lockfile from their downstream
+# tree — they aren't bound by ours.
+!Cargo.lock
 

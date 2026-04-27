@@ -43,7 +43,7 @@ def _next_snapshot_id() -> str:
 from tset import manifest as M
 from tset.audit_log import AuditLog
 from tset.columns import MetadataColumns
-from tset.constants import HEADER_SIZE, TRUNCATED_HASH_SIZE
+from tset.constants import HEADER_SIZE, TRUNCATED_HASH_SIZE, VERSION_MAJOR, VERSION_MINOR
 from tset.document_store import DocumentStoreWriter
 from tset.footer import Footer
 from tset.hashing import hash_bytes, shard_merkle_root
@@ -169,6 +169,7 @@ class Writer:
                         "byte_offset_in_view": c.byte_offset_in_view,
                         "compressed_size": c.compressed_size,
                         "num_tokens": c.num_tokens,
+                        "content_hash": c.content_hash,
                     }
                     for c in view.chunks
                 ],
@@ -226,8 +227,8 @@ class Writer:
         manifest_offset = HEADER_SIZE + len(body)
 
         header = Header(
-            version_major=0,
-            version_minor=1,
+            version_major=VERSION_MAJOR,
+            version_minor=VERSION_MINOR,
             flags=0,
             manifest_offset=manifest_offset,
             manifest_size=len(manifest_bytes),
@@ -294,6 +295,7 @@ def append_tokenizer_view(path: str, tokenizer: Tokenizer) -> None:
                     "byte_offset_in_view": c.byte_offset_in_view,
                     "compressed_size": c.compressed_size,
                     "num_tokens": c.num_tokens,
+                    "content_hash": c.content_hash,
                 }
                 for c in view.chunks
             ],

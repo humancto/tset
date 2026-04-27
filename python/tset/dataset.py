@@ -225,13 +225,35 @@ class DatasetWriter:
     `exclusions.json` overlay; the dataset manifest is rewritten on `close`.
     """
 
-    def __init__(self, root: str):
+    def __init__(self, root: str, load_existing: bool = True):
+        """If `load_existing` and `root/manifest.tset.json` exists, reload
+        prior shard registrations + exclusions so the writer can extend
+        an existing dataset instead of starting from scratch. Set False
+        to ignore prior state (the previous behavior)."""
         self.root = root
         os.makedirs(os.path.join(root, SHARDS_DIRNAME), exist_ok=True)
         self._shards: list[ShardEntry] = []
         self._exclusions: set[str] = set()
         self._audit = AuditLog()
         self._closed = False
+        if load_existing:
+            self._load_existing_state()
+
+    def _load_existing_state(self) -> None:
+        manifest_path = os.path.join(self.root, DATASET_MANIFEST_NAME)
+        excl_path = os.path.join(self.root, EXCLUSIONS_NAME)
+        if os.path.exists(manifest_path):
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            for s in manifest.get("shards", []):
+                self._shards.append(ShardEntry(**s))
+            audit = manifest.get("audit_log")
+            if audit:
+                self._audit = AuditLog.from_dict(audit)
+        if os.path.exists(excl_path):
+            with open(excl_path, "r", encoding="utf-8") as f:
+                excl = json.load(f)
+            self._exclusions.update(excl.get("excluded_doc_hashes", []))
 
     def shard_writer(self, name: str) -> Writer:
         relpath = os.path.join(SHARDS_DIRNAME, f"{name}.tset")
@@ -239,6 +261,13 @@ class DatasetWriter:
 
     def register_shard(self, name: str) -> ShardEntry:
         relpath = os.path.join(SHARDS_DIRNAME, f"{name}.tset")
+        # Idempotent: skip if already registered AND the on-disk shard
+        # still matches what we recorded (same shard_id + manifest hash).
+        # Detects accidental duplicate-register and silently allows
+        # rebuild-then-register flows.
+        for existing in self._shards:
+            if existing.relpath == relpath:
+                return existing
         shard_path = os.path.join(self.root, relpath)
         with Reader(shard_path) as r:
             shard_id = r.manifest["shard_id"]
