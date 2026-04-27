@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] — 2026-04-27
+
+PR 10: Ed25519 audit-log signing.
+
+### Threat model
+
+Before PR 10 the audit log was tamper-evident only under the
+assumption that the manifest itself wasn't rewritten. Anyone who
+could rewrite the manifest could also rewrite the chained-hash log
+to be self-consistent. PR 10 closes that gap by binding each entry
+to a writer-controlled key. Tamper-evidence now holds even if the
+manifest_hash + footer are recomputed by an adversary, as long as
+the writer's secret key was never disclosed.
+
+### `tset-core::signing` (new module)
+
+- `AuditSigner::generate()` — fresh Ed25519 keypair from OS RNG.
+- `AuditSigner::from_secret_bytes(&[u8])` — load existing key.
+- `AuditSigner::sign(msg) -> [u8; 64]`
+- `AuditSigner::public_key_bytes() -> [u8; 32]`
+- `verify_signature(pk, msg, sig) -> bool` — fail-closed on
+  malformed inputs (no panics).
+
+### `AuditLog`
+
+- `AuditLog::with_signer(AuditSigner)` — writer constructor that
+  signs every appended entry.
+- Each entry now carries an optional `signature: hex` field
+  (Ed25519 over the entry_hash bytes).
+- `writer_public_key: hex` published in the audit_log JSON when
+  signing is enabled.
+- `verify_audit_log` enforces:
+  - if pubkey present, every entry MUST be signed and verify
+  - if any entry signed but no pubkey, reject (signatures without
+    a published key aren't trusted)
+  - sig + chained-hash both validated per entry
+
+### Writer
+
+- `tset_core::Writer::create_with_options(path, shard_id, signer)`
+  threads an optional signer through to the audit log.
+- PyO3: `tset_rs.Writer(path, shard_id=None, signing_key=None)`
+  accepts a 32-byte secret.
+- New PyO3 module functions: `generate_signing_key()`,
+  `signing_public_key(secret)`, `verify_audit_signature(pk, msg, sig)`.
+
+### Python `AuditLog`
+
+- `AuditLog.writer_public_key: str | None`
+- `AuditEvent.signature: str | None`
+- `verify()` calls into `tset_rs.verify_audit_signature` when a
+  pubkey is published. (Pure-Python Ed25519 isn't bundled — using
+  the FFI is the supported path.)
+
+### Tests
+
+- 6 new tests in `python/tests/test_pr10_signing.py`:
+  signing-key shapes, signed-entry emission, tampered-signature
+  rejection, drop-signatures downgrade rejection, signatures-without-
+  pubkey rejection, unsigned writes still verify (backward compat).
+- 3 new Rust unit tests in `signing.rs`.
+
+### Test totals
+
+- 39 Rust + 121 Python = 160
+
+### What's next
+
+- PR 11 will land on-disk binary sections (TSMT/TLOG/TCOL),
+  S3 reader, Rust DataLoader, real tokenizer registry, multi-modal
+  sketch, criterion benches D/E, rustdoc, and start dropping the
+  Python duplicate impls now that signing is in place.
+
 ## [0.3.0] — 2026-04-27
 
 PR 9: bit-packed token IDs — first format-version bump since v0.2.

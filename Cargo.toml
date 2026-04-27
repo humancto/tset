@@ -25,6 +25,8 @@ thiserror = "1"
 hex = "0.4"
 indexmap = "2"
 regex = "1"
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
+rand = "0.8"
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
 
 [profile.release]

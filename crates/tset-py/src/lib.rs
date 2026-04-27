@@ -10,6 +10,7 @@ use pyo3::types::{PyBytes, PyList};
 
 use tset_core::dataset::{Dataset as CoreDataset, DatasetWriter as CoreDatasetWriter};
 use tset_core::reader::Reader as CoreReader;
+use tset_core::signing::{AuditSigner, verify_signature};
 use tset_core::tokenizers::{ByteLevelTokenizer, Tokenizer, WhitespaceTokenizer};
 use tset_core::writer::Writer as CoreWriter;
 use tset_core::TsetError;
@@ -282,11 +283,22 @@ pub struct PyWriter {
 #[pymethods]
 impl PyWriter {
     #[new]
-    #[pyo3(signature = (path, shard_id=None))]
-    fn new(path: &str, shard_id: Option<String>) -> Self {
-        Self {
-            inner: Some(CoreWriter::create(path, shard_id)),
-        }
+    #[pyo3(signature = (path, shard_id=None, signing_key=None))]
+    fn new(
+        path: &str,
+        shard_id: Option<String>,
+        signing_key: Option<&[u8]>,
+    ) -> PyResult<Self> {
+        let signer = match signing_key {
+            None => None,
+            Some(b) => Some(
+                AuditSigner::from_secret_bytes(b)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            ),
+        };
+        Ok(Self {
+            inner: Some(CoreWriter::create_with_options(path, shard_id, signer)),
+        })
     }
 
     #[pyo3(signature = (content, metadata=None))]
@@ -504,6 +516,40 @@ impl PyDataset {
     }
 }
 
+/// Generate a fresh Ed25519 signing key. Returns (secret_bytes, public_bytes).
+/// Use the returned secret to construct a `Writer(..., signing_key=secret)`.
+#[pyfunction]
+fn generate_signing_key(py: Python<'_>) -> (Bound<'_, PyBytes>, Bound<'_, PyBytes>) {
+    let signer = AuditSigner::generate();
+    let secret = signer.secret_bytes();
+    let public = signer.public_key_bytes();
+    (
+        PyBytes::new_bound(py, &secret),
+        PyBytes::new_bound(py, &public),
+    )
+}
+
+/// Compute the public key for an existing 32-byte secret.
+#[pyfunction]
+fn signing_public_key<'py>(
+    py: Python<'py>,
+    secret_bytes: &[u8],
+) -> PyResult<Bound<'py, PyBytes>> {
+    let s = AuditSigner::from_secret_bytes(secret_bytes)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(PyBytes::new_bound(py, &s.public_key_bytes()))
+}
+
+/// Verify an Ed25519 signature against a public key + message.
+#[pyfunction]
+fn verify_audit_signature(
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+) -> bool {
+    verify_signature(public_key, message, signature)
+}
+
 #[pymodule]
 fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyReader>()?;
@@ -512,6 +558,9 @@ fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDatasetWriter>()?;
     m.add_function(wrap_pyfunction!(verify_inclusion_proof, m)?)?;
     m.add_function(wrap_pyfunction!(verify_non_inclusion_proof, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_signing_key, m)?)?;
+    m.add_function(wrap_pyfunction!(signing_public_key, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_audit_signature, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

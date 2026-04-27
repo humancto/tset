@@ -15,6 +15,7 @@ pub mod tokenizers;
 pub mod tokenizer_view;
 pub mod smt;
 pub mod audit_log;
+pub mod signing;
 pub mod columns;
 pub mod mixture;
 pub mod reader;

@@ -50,7 +50,24 @@ pub struct Writer {
 
 impl Writer {
     pub fn create<P: AsRef<Path>>(path: P, shard_id: Option<String>) -> Self {
+        Self::create_with_options(path, shard_id, None)
+    }
+
+    /// `signer`: optional Ed25519 audit-log signer. When set, every
+    /// audit entry written by this Writer is signed with the provided
+    /// key, and the corresponding public key is published in the
+    /// shard's audit_log section. Readers verify each entry's
+    /// signature against that pubkey at open time.
+    pub fn create_with_options<P: AsRef<Path>>(
+        path: P,
+        shard_id: Option<String>,
+        signer: Option<crate::signing::AuditSigner>,
+    ) -> Self {
         let shard_id = shard_id.unwrap_or_else(random_shard_id);
+        let audit = match signer {
+            Some(s) => AuditLog::with_signer(s),
+            None => AuditLog::new(),
+        };
         Self {
             path: path.as_ref().to_path_buf(),
             shard_id,
@@ -59,7 +76,7 @@ impl Writer {
             doc_seen: std::collections::HashSet::new(),
             views: Vec::new(),
             smt: SparseMerkleTree::new(),
-            audit: AuditLog::new(),
+            audit,
             columns: MetadataColumns::new(),
             subsets: Vec::new(),
         }
