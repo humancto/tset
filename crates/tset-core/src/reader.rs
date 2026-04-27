@@ -213,6 +213,42 @@ impl Reader {
         &self.path
     }
 
+    /// Reconstruct the shard's SMT root either from the manifest's
+    /// `smt_root` field (cheap path) or by replaying `smt_present_keys`
+    /// (fallback). The two MUST agree on a well-formed shard.
+    pub fn smt_root(&self) -> Hash {
+        if let Some(s) = self.manifest.smt_root_hex() {
+            if let Ok(b) = hex::decode(s) {
+                if b.len() == 32 {
+                    let mut h = [0u8; 32];
+                    h.copy_from_slice(&b);
+                    return h;
+                }
+            }
+        }
+        // Fallback: rebuild from present-keys list
+        let mut tree = crate::smt::SparseMerkleTree::new();
+        if let Some(arr) = self
+            .manifest
+            .raw()
+            .get("smt_present_keys")
+            .and_then(serde_json::Value::as_array)
+        {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    if let Ok(bytes) = hex::decode(s) {
+                        if bytes.len() == 32 {
+                            let mut h = [0u8; 32];
+                            h.copy_from_slice(&bytes);
+                            tree.insert(h);
+                        }
+                    }
+                }
+            }
+        }
+        tree.root()
+    }
+
     pub fn manifest(&self) -> &Manifest {
         &self.manifest
     }

@@ -15,8 +15,11 @@ pub mod tokenizers;
 pub mod tokenizer_view;
 pub mod smt;
 pub mod audit_log;
+pub mod columns;
+pub mod mixture;
 pub mod reader;
 pub mod writer;
+pub mod dataset;
 
 pub use error::{TsetError, TsetResult};
 pub use reader::Reader;

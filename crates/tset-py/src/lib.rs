@@ -8,6 +8,7 @@ use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 
+use tset_core::dataset::{Dataset as CoreDataset, DatasetWriter as CoreDatasetWriter};
 use tset_core::reader::Reader as CoreReader;
 use tset_core::tokenizers::{ByteLevelTokenizer, Tokenizer, WhitespaceTokenizer};
 use tset_core::writer::Writer as CoreWriter;
@@ -157,17 +158,48 @@ impl PyWriter {
         }
     }
 
+    #[pyo3(signature = (content, metadata=None))]
     fn add_document<'py>(
         &mut self,
         py: Python<'py>,
         content: &[u8],
+        metadata: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Bound<'py, PyBytes>> {
         let w = self
             .inner
             .as_mut()
             .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
-        let h = w.add_document(content).map_err(map_err)?;
+        let h = match metadata {
+            None => w.add_document(content).map_err(map_err)?,
+            Some(obj) => {
+                let json_str: String = py
+                    .import_bound("json")?
+                    .call_method1("dumps", (obj,))?
+                    .extract()?;
+                let value: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                let map = value
+                    .as_object()
+                    .ok_or_else(|| PyValueError::new_err("metadata must be a dict"))?;
+                w.add_document_with_metadata(content, Some(map))
+                    .map_err(map_err)?
+            }
+        };
         Ok(PyBytes::new_bound(py, &h))
+    }
+
+    fn add_subset(
+        &mut self,
+        name: &str,
+        predicate: &str,
+        default_weight: f64,
+    ) -> PyResult<()> {
+        let w = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
+        w.add_subset(name, predicate, default_weight);
+        Ok(())
     }
 
     /// `tokenizer_spec` is a (id, vocab_size) tuple. v0.2 supports
@@ -221,10 +253,132 @@ impl PyWriter {
     }
 }
 
+#[pyclass(name = "DatasetWriter", module = "tset._rs")]
+pub struct PyDatasetWriter {
+    inner: Option<CoreDatasetWriter>,
+    root: std::path::PathBuf,
+}
+
+#[pymethods]
+impl PyDatasetWriter {
+    #[new]
+    fn new(root: &str) -> PyResult<Self> {
+        let inner = CoreDatasetWriter::create(root).map_err(map_err)?;
+        Ok(Self {
+            inner: Some(inner),
+            root: std::path::PathBuf::from(root),
+        })
+    }
+
+    /// Return the path where a shard with the given name will be written.
+    /// Caller writes the shard via `tset_rs.Writer(path)` then calls
+    /// `register_shard(name)`.
+    fn shard_path(&self, name: &str) -> PyResult<String> {
+        let w = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| PyValueError::new_err("dataset writer already closed"))?;
+        Ok(w.shard_path(name).to_string_lossy().into_owned())
+    }
+
+    fn register_shard(&mut self, name: &str) -> PyResult<()> {
+        let w = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("dataset writer already closed"))?;
+        w.register_shard(name).map_err(map_err)?;
+        Ok(())
+    }
+
+    #[pyo3(signature = (doc_hash, reason=""))]
+    fn add_exclusion(&mut self, doc_hash: &[u8], reason: &str) -> PyResult<()> {
+        if doc_hash.len() != 32 {
+            return Err(PyValueError::new_err("doc_hash must be 32 bytes"));
+        }
+        let w = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("dataset writer already closed"))?;
+        let mut h = [0u8; 32];
+        h.copy_from_slice(doc_hash);
+        w.add_exclusion(&h, reason);
+        Ok(())
+    }
+
+    fn close(&mut self) -> PyResult<()> {
+        let w = self
+            .inner
+            .take()
+            .ok_or_else(|| PyValueError::new_err("dataset writer already closed"))?;
+        w.close().map_err(map_err)
+    }
+
+    fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __exit__(
+        &mut self,
+        exc_type: &Bound<'_, PyAny>,
+        _exc_value: &Bound<'_, PyAny>,
+        _traceback: &Bound<'_, PyAny>,
+    ) -> PyResult<bool> {
+        if exc_type.is_none() && self.inner.is_some() {
+            self.close()?;
+        } else {
+            self.inner = None;
+        }
+        Ok(false)
+    }
+
+    #[getter]
+    fn root(&self) -> String {
+        self.root.to_string_lossy().into_owned()
+    }
+}
+
+#[pyclass(name = "Dataset", module = "tset._rs")]
+pub struct PyDataset {
+    inner: CoreDataset,
+}
+
+#[pymethods]
+impl PyDataset {
+    #[new]
+    fn new(path: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: CoreDataset::open(path).map_err(map_err)?,
+        })
+    }
+
+    fn shard_paths(&self) -> Vec<String> {
+        self.inner
+            .shard_paths()
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn exclusions(&self) -> Vec<String> {
+        self.inner.exclusions().iter().cloned().collect()
+    }
+
+    fn is_excluded(&self, doc_hash_hex: &str) -> bool {
+        self.inner.is_excluded(doc_hash_hex)
+    }
+
+    fn dataset_merkle_root<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let r = self.inner.dataset_merkle_root().map_err(map_err)?;
+        Ok(PyBytes::new_bound(py, &r))
+    }
+}
+
 #[pymodule]
 fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyReader>()?;
     m.add_class::<PyWriter>()?;
+    m.add_class::<PyDataset>()?;
+    m.add_class::<PyDatasetWriter>()?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

@@ -23,6 +23,7 @@ serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision
 thiserror = "1"
 hex = "0.4"
 indexmap = "2"
+regex = "1"
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
 
 [profile.release]

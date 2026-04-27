@@ -7,6 +7,39 @@ pub fn hash_bytes(data: &[u8]) -> Hash {
     *blake3::hash(data).as_bytes()
 }
 
+/// Balanced binary Merkle tree over leaves IN GIVEN ORDER (no sort).
+/// Matches Python's `merkle_root()` (which `shard_merkle_root` then sorts
+/// before calling).
+pub fn merkle_root_unsorted(leaves: &[Hash]) -> Hash {
+    if leaves.is_empty() {
+        return [0u8; HASH_SIZE];
+    }
+    let mut level: Vec<Hash> = leaves
+        .iter()
+        .map(|h| {
+            let mut buf = Vec::with_capacity(1 + HASH_SIZE);
+            buf.push(0x00);
+            buf.extend_from_slice(h);
+            hash_bytes(&buf)
+        })
+        .collect();
+    while level.len() > 1 {
+        if level.len() % 2 == 1 {
+            level.push(*level.last().unwrap());
+        }
+        let mut next = Vec::with_capacity(level.len() / 2);
+        for pair in level.chunks_exact(2) {
+            let mut buf = Vec::with_capacity(1 + 2 * HASH_SIZE);
+            buf.push(0x01);
+            buf.extend_from_slice(&pair[0]);
+            buf.extend_from_slice(&pair[1]);
+            next.push(hash_bytes(&buf));
+        }
+        level = next;
+    }
+    level[0]
+}
+
 /// Per SPEC §6: balanced binary Merkle tree over **sorted** doc hashes.
 /// - empty input → 32 zero bytes
 /// - leaf node     = hash(0x00 || leaf)

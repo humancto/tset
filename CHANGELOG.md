@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] — 2026-04-27
+
+PR 4: Rust DatasetWriter + MetadataColumns + Mixture / Subset.
+
+### Rust additions
+
+- `tset-core::columns::MetadataColumns` with chunk-level statistics, full
+  insertion order, and a tiny SQL-like predicate compiler (`=`, `!=`,
+  `>`, `<`, `>=`, `<=`, `IN (...)`, `LIKE`, `AND`, `OR`, `(...)`).
+  Byte-equivalent JSON output to Python's columns module.
+- `tset-core::mixture::Subset` for named `(predicate, default_weight)`
+  pairs persisted in the manifest under `subsets`.
+- `tset-core::dataset::Dataset` and `tset-core::dataset::DatasetWriter`
+  for multi-shard layout per RFC §5.8: root manifest
+  (`manifest.tset.json`, sort_keys + indent=2 to match Python),
+  exclusion overlay (`exclusions.json`), dataset Merkle root over
+  `(shard_id, shard_hash, shard_smt_root)` leaves, full SMT-bound
+  inclusion + non-inclusion proofs.
+- `tset-core::Reader::smt_root` (was previously private to dataset).
+- `tset-core::hashing::merkle_root_unsorted` (matches Python's
+  `merkle_root` separate from the order-independent
+  `shard_merkle_root`).
+
+### Writer wiring
+
+- `Writer::add_document_with_metadata(content, Option<&Map>)` accepts a
+  per-document metadata dict that lands in the columnar section.
+  `add_document(content)` is a thin wrapper.
+- `Writer::add_subset(name, predicate, default_weight)` registers
+  named mixture subsets.
+- The manifest's `metadata_columns` and `subsets` fields now carry
+  real values instead of empty placeholders.
+
+### PyO3 surface
+
+- New: `tset_rs.Dataset(path)` and `tset_rs.DatasetWriter(root)` with
+  `shard_path / register_shard / add_exclusion / close` plus context
+  manager.
+- `tset_rs.Writer.add_document(content, metadata=None)` accepts a
+  Python dict (serialized via stdlib `json.dumps` to JSON, parsed
+  with `serde_json` on the Rust side).
+- `tset_rs.Writer.add_subset(name, predicate, default_weight)`.
+
+### Tests
+
+- 5 new cross-impl tests in `python/tests/test_rust_dataset.py`:
+  Rust DatasetWriter → Python Dataset shape; exclusion overlay
+  round-trip; dataset Merkle root parity; metadata columns parity
+  (including `filter_sql_like`); subsets persisted in manifest.
+- 3 Rust unit tests for the predicate compiler (basic, parens,
+  `IN`/`LIKE`).
+
+### Test totals
+
+- 33 Rust (was 30: +3 column unit tests)
+- 75 Python (was 70: +5 cross-impl dataset tests)
+- 5/5 trial stable
+
+### Deferred to PR 5
+
+- Drop legacy Python writer/reader; re-export from `tset_rs`. Held
+  back because there are still Python-only paths (mixture sampler in
+  the `DataLoader`, predicate cleanup edge cases) that would silently
+  break tests if removed.
+- Format converters: parquet, mds, webdataset.
+- `tset-bench` (criterion) covering all five RFC benchmarks.
+
 ## [0.2.1] — 2026-04-27
 
 PR 3: streaming throughput win + CLI + strict v0.2.
