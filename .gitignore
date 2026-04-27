@@ -6,3 +6,7 @@ __pycache__/
 # Generated benchmark artifacts (everything under corpus/ and results/)
 benchmarks/results/
 benchmarks/corpus/
+
+# Rust
+target/
+

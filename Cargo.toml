@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tset-core",
+    "crates/tset-py",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+authors = ["TSET contributors"]
+repository = "https://github.com/humancto/tset"
+homepage = "https://github.com/humancto/tset"
+
+[workspace.dependencies]
+blake3 = "1.5"
+zstd = { version = "0.13", default-features = false }
+memmap2 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
+thiserror = "1"
+hex = "0.4"
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3

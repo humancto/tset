@@ -1,0 +1,17 @@
+[package]
+name = "tset-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Reference Rust implementation of the TSET binary format (reader-side primitives)"
+
+[dependencies]
+blake3 = { workspace = true }
+zstd = { workspace = true }
+memmap2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
