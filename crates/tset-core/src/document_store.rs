@@ -56,7 +56,14 @@ impl<'a> DocumentStoreReader<'a> {
             .get(doc_hash)
             .ok_or_else(|| TsetError::DocumentNotFound(hex::encode(doc_hash)))?;
         let block = self.read_block(loc.block_idx)?;
-        let start = loc.in_block_offset as usize;
+        let start = usize::try_from(loc.in_block_offset)
+            .map_err(|_| TsetError::BadManifest("in_block_offset overflow"))?;
+        let header_end = start
+            .checked_add(HASH_SIZE + 8)
+            .ok_or(TsetError::BadManifest("doc header range overflow"))?;
+        if header_end > block.len() {
+            return Err(TsetError::BadManifest("doc header exceeds block"));
+        }
         let stored_hash: &[u8] = &block[start..start + HASH_SIZE];
         if stored_hash != doc_hash {
             return Err(TsetError::DocumentHashMismatch);
@@ -69,8 +76,15 @@ impl<'a> DocumentStoreReader<'a> {
         if size != loc.content_size {
             return Err(TsetError::DocumentContentSizeMismatch);
         }
+        let size_usize =
+            usize::try_from(size).map_err(|_| TsetError::BadManifest("doc size overflow"))?;
         let body_start = start + HASH_SIZE + 8;
-        let body_end = body_start + size as usize;
+        let body_end = body_start
+            .checked_add(size_usize)
+            .ok_or(TsetError::BadManifest("doc body range overflow"))?;
+        if body_end > block.len() {
+            return Err(TsetError::BadManifest("doc body exceeds block"));
+        }
         Ok(block[body_start..body_end].to_vec())
     }
 
@@ -82,17 +96,26 @@ impl<'a> DocumentStoreReader<'a> {
             .blocks
             .get(block_idx as usize)
             .ok_or(TsetError::BadManifest("block_idx out of range"))?;
-        let off = info.offset as usize;
-        let header = &self.file_bytes[off..off + BLOCK_HEADER_SIZE];
+        let off = usize::try_from(info.offset)
+            .map_err(|_| TsetError::BadManifest("block.offset overflow"))?;
+        let compressed_size = usize::try_from(info.compressed_size)
+            .map_err(|_| TsetError::BadManifest("block.compressed_size overflow"))?;
+        let header_end = off
+            .checked_add(BLOCK_HEADER_SIZE)
+            .ok_or(TsetError::BadManifest("block header range overflow"))?;
+        let payload_end = header_end
+            .checked_add(compressed_size)
+            .ok_or(TsetError::BadManifest("block payload range overflow"))?;
+        if payload_end > self.file_bytes.len() {
+            return Err(TsetError::BadManifest("block payload exceeds file"));
+        }
+        let header = &self.file_bytes[off..header_end];
         let mut magic = [0u8; 4];
         magic.copy_from_slice(&header[0..4]);
         if &magic != MAGIC_DOC_BLOCK {
             return Err(TsetError::BadBlockMagic(magic));
         }
-        // header[4..8] = num_documents, header[8..16] = uncompressed, header[16..24] = compressed
-        let payload_start = off + BLOCK_HEADER_SIZE;
-        let payload_end = payload_start + info.compressed_size as usize;
-        let compressed = &self.file_bytes[payload_start..payload_end];
+        let compressed = &self.file_bytes[header_end..payload_end];
         let decompressed = zstd::stream::decode_all(compressed)
             .map_err(|e| TsetError::Zstd(e.to_string()))?;
         if decompressed.len() as u64 != info.uncompressed_size {

@@ -113,6 +113,15 @@ mod tests {
     }
 
     #[test]
+    fn rejects_short_buffer_without_panic() {
+        let buf = [0u8; 10];
+        assert!(matches!(
+            Header::decode(&buf),
+            Err(TsetError::BadManifest(_))
+        ));
+    }
+
+    #[test]
     fn rejects_unsupported_version() {
         let mut h = Header {
             version_major: 0,

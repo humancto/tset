@@ -178,20 +178,6 @@ fn write_quoted_string(s: &str, out: &mut String) {
     out.push('"');
 }
 
-fn format_python_float(f: f64) -> String {
-    // Python repr(float): shortest roundtrip; whole-valued floats print as "1.0".
-    // Rust's default for f64 prints whole-valued as "1" — append ".0" to match.
-    if !f.is_finite() {
-        return f.to_string();
-    }
-    let s = format!("{f}");
-    if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-        format!("{s}.0")
-    } else {
-        s
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
