@@ -52,3 +52,23 @@ fn rust_writer_rejects_add_document_after_view() {
     let err = w.add_document(b"too late").err().unwrap();
     assert!(matches!(err, tset_core::TsetError::BadManifest(_)));
 }
+
+#[test]
+fn open_with_options_skip_reproducibility_succeeds() {
+    use tset_core::reader::OpenOptions;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("skip.tset");
+    let mut w = Writer::create(&path, None);
+    w.add_document(b"alpha").unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+
+    // Default: full verification (incl reproducibility check)
+    let _r = Reader::open(&path).unwrap();
+    // Skip-reproducibility opens cleanly too — and is faster on big shards
+    let opts = OpenOptions {
+        skip_reproducibility: true,
+    };
+    let _r = Reader::open_with_options(&path, opts).unwrap();
+}

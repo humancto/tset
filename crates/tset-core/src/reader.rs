@@ -53,8 +53,39 @@ pub struct Reader {
     index: HashMap<Hash, DocumentLocator>,
 }
 
+/// Opt-in verification controls. Default = full verification (the
+/// safe choice). Skipping the reproducibility check is only sound when
+/// the caller has *already verified the shard once*; on a hot streaming
+/// path you can re-open with `skip_reproducibility=true` to avoid
+/// re-tokenizing the test_vector documents on every open.
+#[derive(Debug, Clone, Copy)]
+pub struct OpenOptions {
+    pub skip_reproducibility: bool,
+}
+
+impl Default for OpenOptions {
+    fn default() -> Self {
+        Self {
+            skip_reproducibility: false,
+        }
+    }
+}
+
 impl Reader {
     pub fn open<P: AsRef<Path>>(path: P) -> TsetResult<Self> {
+        Self::open_with_options(path, OpenOptions::default())
+    }
+
+    pub fn open_with_options<P: AsRef<Path>>(
+        path: P,
+        opts: OpenOptions,
+    ) -> TsetResult<Self> {
+        let r = Self::open_inner(path)?;
+        r.verify_invariants_with(opts)?;
+        Ok(r)
+    }
+
+    fn open_inner<P: AsRef<Path>>(path: P) -> TsetResult<Self> {
         let path: PathBuf = path.as_ref().to_path_buf();
         let file = File::open(&path)?;
         let mmap = unsafe { Mmap::map(&file)? };
@@ -137,7 +168,7 @@ impl Reader {
             );
         }
 
-        let reader = Self {
+        Ok(Self {
             path,
             mmap,
             header,
@@ -145,12 +176,14 @@ impl Reader {
             manifest,
             blocks,
             index,
-        };
-        reader.verify_invariants()?;
-        Ok(reader)
+        })
     }
 
-    fn verify_invariants(&self) -> TsetResult<()> {
+    fn verify_invariants_with(&self, opts: OpenOptions) -> TsetResult<()> {
+        self.verify_invariants_core(opts.skip_reproducibility)
+    }
+
+    fn verify_invariants_core(&self, skip_reproducibility: bool) -> TsetResult<()> {
         // shard_merkle_root must agree with header AND with the manifest field
         // Order doesn't matter — root computed from doc_index keys (hex sort?
         // no — Python uses insertion order of doc_index dict). Replicate:
@@ -210,6 +243,12 @@ impl Reader {
         // Full reproducibility check (SPEC §7 obligation #4): for each
         // view, rebuild a tokenizer from its config and re-tokenize the
         // test_vector documents, asserting the byte hash matches.
+        //
+        // `skip_reproducibility` short-circuits this — only sound on a
+        // hot streaming open of a shard the caller has already verified.
+        if skip_reproducibility {
+            return Ok(());
+        }
         if let Ok(views) = self.manifest.views() {
             for (_id, view) in views {
                 if let Some(tv) = view.get("test_vector") {
