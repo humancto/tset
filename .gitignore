@@ -1,7 +1,8 @@
 __pycache__/
 *.pyc
 *.egg-info/
-benchmarks/results/*.json
-benchmarks/corpus/*.tset
-benchmarks/corpus/*.bin
-benchmarks/corpus/*.jsonl
+.pytest_cache/
+
+# Generated benchmark artifacts (everything under corpus/ and results/)
+benchmarks/results/
+benchmarks/corpus/
