@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from tset.constants import (
     HEADER_SIZE,
     MAGIC_HEADER,
+    SUPPORTED_MINOR_VERSIONS,
     VERSION_MAJOR,
     VERSION_MINOR,
     HASH_SIZE,
@@ -44,14 +45,14 @@ class Header:
             raise ValueError(f"bad header magic: {data[0:4]!r}")
         version_major = data[4]
         version_minor = data[5]
-        if version_major > VERSION_MAJOR:
+        if version_major != VERSION_MAJOR or version_minor not in SUPPORTED_MINOR_VERSIONS:
             raise ValueError(
                 f"unsupported version {version_major}.{version_minor}; "
-                f"this reader supports up to {VERSION_MAJOR}.{VERSION_MINOR}"
+                f"this reader supports {VERSION_MAJOR}.{SUPPORTED_MINOR_VERSIONS}"
             )
         flags = struct.unpack_from("<I", data, 8)[0]
         if flags != 0:
-            raise ValueError(f"unexpected header flags: 0x{flags:08x} (must be 0 in v0.1)")
+            raise ValueError(f"unexpected header flags: 0x{flags:08x} (must be 0)")
         manifest_offset = struct.unpack_from("<Q", data, 16)[0]
         manifest_size = struct.unpack_from("<Q", data, 24)[0]
         return cls(

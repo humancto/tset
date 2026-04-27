@@ -25,6 +25,17 @@ class ChunkInfo:
     byte_offset_in_view: int
     compressed_size: int
     num_tokens: int
+    content_hash: bytes | None = None  # BLAKE3 of the compressed chunk payload (v0.2+)
+
+    @classmethod
+    def from_manifest(cls, entry: dict) -> "ChunkInfo":
+        ch = entry.get("content_hash")
+        return cls(
+            byte_offset_in_view=entry["byte_offset_in_view"],
+            compressed_size=entry["compressed_size"],
+            num_tokens=entry["num_tokens"],
+            content_hash=bytes.fromhex(ch) if ch else None,
+        )
 
 
 @dataclass
@@ -96,6 +107,7 @@ def build_view(
                 byte_offset_in_view=cursor_in_view,
                 compressed_size=len(compressed),
                 num_tokens=int(pending.size),
+                content_hash=hash_bytes(compressed),
             )
         )
         chunk_payloads.append(chunk_payload)
@@ -184,6 +196,8 @@ def read_chunk(
             abs_offset + CHUNK_HEADER_SIZE : abs_offset + CHUNK_HEADER_SIZE + compressed_size
         ]
     )
+    if chunk.content_hash is not None and hash_bytes(payload) != chunk.content_hash:
+        raise ValueError("chunk content_hash mismatch (compressed payload tampered)")
     raw = zstd.ZstdDecompressor().decompress(payload, max_output_size=uncompressed_size)
     if len(raw) != uncompressed_size:
         raise ValueError("chunk decompressed size mismatch")

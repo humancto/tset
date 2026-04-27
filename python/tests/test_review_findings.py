@@ -187,6 +187,33 @@ def test_dataloader_partition_union_equals_full_stream(tmp_path):
         assert sum(seen) == r.view_total_tokens("byte-level-v1")
 
 
+def test_v02_per_chunk_hash_detects_body_tampering(tmp_path):
+    """v0.2 mandates chunk content_hash, which catches body-byte tampering
+    even when the chunk header is left intact."""
+    p = str(tmp_path / "v02.tset")
+    with Writer(p) as w:
+        for i in range(40):
+            w.add_document(("payload " * 30 + str(i)).encode())
+        w.add_tokenizer_view(ByteLevelTokenizer())
+    with Reader(p) as r:
+        assert r.header.version_minor == 2
+        view = r.manifest["tokenization_views"]["byte-level-v1"]
+        chunk0 = view["chunks"][0]
+        assert chunk0["content_hash"], "v0.2 must record content_hash on every chunk"
+        # Flip a byte deep inside the compressed payload (body, not header)
+        body_off = (
+            view["view_offset"] + chunk0["byte_offset_in_view"] + 24 + chunk0["compressed_size"] // 2
+        )
+    with open(p, "rb") as f:
+        data = bytearray(f.read())
+    data[body_off] ^= 0xFF
+    with open(p, "wb") as f:
+        f.write(bytes(data))
+    with Reader(p) as r:
+        with pytest.raises(ValueError, match="content_hash mismatch"):
+            list(r.stream_tokens("byte-level-v1", batch_size=64))
+
+
 def test_header_rejects_unknown_flags():
     from tset.constants import HEADER_SIZE
     from tset.header import Header

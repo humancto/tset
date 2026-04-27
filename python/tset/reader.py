@@ -147,7 +147,10 @@ class Reader:
             if cached is not None:
                 return cached
             arr = read_chunk(
-                self._mm, view_offset, ChunkInfo(**chunks[idx]), vocab_size=vocab_size
+                self._mm,
+                view_offset,
+                ChunkInfo.from_manifest(chunks[idx]),
+                vocab_size=vocab_size,
             )
             chunk_arrays[idx] = arr
             return arr
