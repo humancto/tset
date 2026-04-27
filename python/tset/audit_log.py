@@ -29,15 +29,23 @@ class AuditEvent:
     prev_root: str
     entry_hash: str
     chained_root: str
+    # v0.4+: optional Ed25519 signature over entry_hash bytes (hex-encoded).
+    signature: str | None = None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        if d.get("signature") is None:
+            d.pop("signature", None)
+        return d
 
 
 @dataclass
 class AuditLog:
     entries: list[AuditEvent] = field(default_factory=list)
     log_root: str = ""
+    # When signing, every appended entry is signed; verify() requires
+    # a matching `writer_public_key` on the manifest's audit_log dict.
+    writer_public_key: str | None = None
 
     def append(self, event_type: EventType, payload: dict) -> AuditEvent:
         seq = len(self.entries)
@@ -83,6 +91,26 @@ class AuditLog:
 
     def verify(self) -> bool:
         prev_root = ""
+        # Signature contract: if writer_public_key is set, every entry
+        # MUST have a signature. If any entry has a signature but no
+        # pubkey is published, reject.
+        any_signed = any(ev.signature for ev in self.entries)
+        if self.writer_public_key and not any_signed and self.entries:
+            return False
+        if not self.writer_public_key and any_signed:
+            return False
+
+        verifier = None
+        if self.writer_public_key:
+            try:
+                import tset_rs  # type: ignore[import-not-found]
+
+                verifier = tset_rs.verify_audit_signature
+            except ImportError:
+                # Pure-Python fallback would need PyNaCl. For now we
+                # require tset_rs to verify signed logs.
+                return False
+
         for i, ev in enumerate(self.entries):
             if ev.seq != i or ev.prev_root != prev_root:
                 return False
@@ -103,18 +131,29 @@ class AuditLog:
             )
             if chained.hex() != ev.chained_root:
                 return False
+            if verifier is not None:
+                if not ev.signature:
+                    return False
+                pk = bytes.fromhex(self.writer_public_key)
+                sig = bytes.fromhex(ev.signature)
+                if not verifier(pk, bytes.fromhex(ev.entry_hash), sig):
+                    return False
             prev_root = ev.chained_root
         return prev_root == self.log_root
 
     def to_dict(self) -> dict:
-        return {
+        out: dict = {
             "entries": [e.to_dict() for e in self.entries],
             "log_root": self.log_root,
         }
+        if self.writer_public_key:
+            out["writer_public_key"] = self.writer_public_key
+        return out
 
     @classmethod
     def from_dict(cls, data: dict) -> "AuditLog":
         log = cls()
         log.entries = [AuditEvent(**e) for e in data.get("entries", [])]
         log.log_root = data.get("log_root", "")
+        log.writer_public_key = data.get("writer_public_key")
         return log

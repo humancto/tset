@@ -17,6 +17,8 @@ thiserror = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
 regex = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

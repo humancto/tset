@@ -25,11 +25,14 @@ pub struct AuditEntry {
     pub prev_root: String,
     pub entry_hash: String,
     pub chained_root: String,
+    /// Optional Ed25519 signature over the entry_hash bytes (not the
+    /// hex string — raw 32 bytes). Hex-encoded in the manifest.
+    pub signature: Option<String>,
 }
 
 impl AuditEntry {
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut out = json!({
             "seq": self.seq,
             "timestamp": serde_json::Number::from_f64(self.timestamp)
                 .map(Value::Number)
@@ -39,19 +42,38 @@ impl AuditEntry {
             "prev_root": self.prev_root.clone(),
             "entry_hash": self.entry_hash.clone(),
             "chained_root": self.chained_root.clone(),
-        })
+        });
+        if let Some(sig) = &self.signature {
+            out["signature"] = json!(sig);
+        }
+        out
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 pub struct AuditLog {
     pub entries: Vec<AuditEntry>,
     pub log_root: String,
+    /// Optional signer. When set, every appended entry is signed.
+    /// Mixed-signature audit logs (some entries signed, some not) are
+    /// rejected at verify time to prevent downgrade attacks.
+    signer: Option<crate::signing::AuditSigner>,
 }
 
 impl AuditLog {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_signer(signer: crate::signing::AuditSigner) -> Self {
+        Self {
+            signer: Some(signer),
+            ..Self::default()
+        }
+    }
+
+    pub fn signer_public_key(&self) -> Option<[u8; crate::signing::PUBLIC_KEY_LEN]> {
+        self.signer.as_ref().map(|s| s.public_key_bytes())
     }
 
     pub fn append(&mut self, event_type: &str, payload: Value, timestamp: f64) -> &AuditEntry {
@@ -82,6 +104,11 @@ impl AuditLog {
         let chained = hash_bytes(&buf);
         let chained_hex = hex::encode(chained);
 
+        let signature = self.signer.as_ref().map(|s| {
+            // Sign the raw entry_hash bytes (not the hex string)
+            hex::encode(s.sign(&entry_hash))
+        });
+
         self.log_root = chained_hex.clone();
         self.entries.push(AuditEntry {
             seq,
@@ -91,15 +118,20 @@ impl AuditLog {
             prev_root,
             entry_hash: hex::encode(entry_hash),
             chained_root: chained_hex,
+            signature,
         });
         self.entries.last().unwrap()
     }
 
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut out = json!({
             "entries": self.entries.iter().map(|e| e.to_json()).collect::<Vec<_>>(),
             "log_root": self.log_root,
-        })
+        });
+        if let Some(pk) = self.signer_public_key() {
+            out["writer_public_key"] = json!(hex::encode(pk));
+        }
+        out
     }
 }
 
@@ -108,6 +140,23 @@ pub fn verify_audit_log(audit: &Value) -> bool {
         return false;
     };
     let log_root_hex = audit.get("log_root").and_then(Value::as_str).unwrap_or("");
+    // If the audit log carries a writer_public_key, every entry MUST be
+    // signed. Drop-some-signatures is a downgrade attack.
+    let pubkey_bytes: Option<Vec<u8>> = audit
+        .get("writer_public_key")
+        .and_then(Value::as_str)
+        .map(|s| hex::decode(s).unwrap_or_default());
+    let any_entry_signed = entries
+        .iter()
+        .any(|e| e.get("signature").and_then(Value::as_str).is_some());
+    if pubkey_bytes.is_some() && !any_entry_signed {
+        return false;
+    }
+    if pubkey_bytes.is_none() && any_entry_signed {
+        // Signatures present but no pubkey to verify against — reject
+        // rather than silently trust them.
+        return false;
+    }
 
     let mut prev_chained_hex = String::new();
     for (i, entry) in entries.iter().enumerate() {
@@ -135,6 +184,21 @@ pub fn verify_audit_log(audit: &Value) -> bool {
         let stored_entry_hex = entry.get("entry_hash").and_then(Value::as_str).unwrap_or("");
         if hex::encode(entry_hash) != stored_entry_hex {
             return false;
+        }
+
+        // Signature check (when a pubkey is published in the audit_log)
+        if let Some(pk) = &pubkey_bytes {
+            let sig_hex = entry.get("signature").and_then(Value::as_str).unwrap_or("");
+            if sig_hex.is_empty() {
+                return false; // missing signature on a signed log
+            }
+            let sig_bytes = match hex::decode(sig_hex) {
+                Ok(b) => b,
+                Err(_) => return false,
+            };
+            if !crate::signing::verify_signature(pk, &entry_hash, &sig_bytes) {
+                return false;
+            }
         }
 
         let prev_bytes = if prev_chained_hex.is_empty() {
