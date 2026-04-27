@@ -157,16 +157,16 @@ pub fn build_view<T: Tokenizer + ?Sized>(
     documents: &[(Hash, Vec<u8>)],
     chunk_size_tokens: usize,
     sparse_interval: usize,
-) -> Vec<TokenizationViewBuild> {
+) -> TsetResult<Vec<TokenizationViewBuild>> {
     // Returns Vec because we may decide to split into multiple views in the
     // future; today we always return exactly one element. Keeping the shape
     // open avoids an API churn later.
-    vec![build_view_one(
+    Ok(vec![build_view_one(
         tokenizer,
         documents,
         chunk_size_tokens,
         sparse_interval,
-    )]
+    )?])
 }
 
 fn build_view_one<T: Tokenizer + ?Sized>(
@@ -174,7 +174,7 @@ fn build_view_one<T: Tokenizer + ?Sized>(
     documents: &[(Hash, Vec<u8>)],
     chunk_size_tokens: usize,
     sparse_interval: usize,
-) -> TokenizationViewBuild {
+) -> TsetResult<TokenizationViewBuild> {
     let mut chunks: Vec<ChunkInfo> = Vec::new();
     let mut chunk_payloads: Vec<Vec<u8>> = Vec::new();
     let mut source_map: Vec<SourceMapEntry> = Vec::new();
@@ -185,10 +185,10 @@ fn build_view_one<T: Tokenizer + ?Sized>(
     let mut total_tokens: u64 = 0;
     let mut cursor_in_view: u64 = VIEW_HEADER_SIZE as u64;
 
-    let mut flush_chunk = |pending: &mut Vec<u32>,
-                           chunks: &mut Vec<ChunkInfo>,
-                           chunk_payloads: &mut Vec<Vec<u8>>,
-                           cursor_in_view: &mut u64| {
+    let flush_chunk = |pending: &mut Vec<u32>,
+                       chunks: &mut Vec<ChunkInfo>,
+                       chunk_payloads: &mut Vec<Vec<u8>>,
+                       cursor_in_view: &mut u64| {
         if pending.is_empty() {
             return;
         }
@@ -223,11 +223,10 @@ fn build_view_one<T: Tokenizer + ?Sized>(
         if ids.is_empty() {
             continue;
         }
-        // Range check
         let v = tokenizer.vocab_size();
         for id in &ids {
             if *id >= v {
-                panic!("tokenizer emitted ID >= vocab_size during build_view");
+                return Err(TsetError::TokenIdOutOfRange(*id, v));
             }
         }
         source_map.push(SourceMapEntry {
@@ -243,7 +242,7 @@ fn build_view_one<T: Tokenizer + ?Sized>(
             let in_chunk_offset = pending.len();
             pending.extend_from_slice(&ids[cursor..cursor + take]);
             let global_first = total_tokens + cursor as u64;
-            while next_sparse_at <= global_first + take as u64 - 1 {
+            while next_sparse_at < global_first + take as u64 {
                 let rel = if next_sparse_at >= global_first {
                     (next_sparse_at - global_first) as u32
                 } else {
@@ -297,7 +296,7 @@ fn build_view_one<T: Tokenizer + ?Sized>(
     encoded.extend_from_slice(&view_header);
     encoded.extend_from_slice(&body);
 
-    TokenizationViewBuild {
+    Ok(TokenizationViewBuild {
         encoded,
         chunks,
         source_map,
@@ -307,5 +306,5 @@ fn build_view_one<T: Tokenizer + ?Sized>(
         config_hash,
         vocab_size: tokenizer.vocab_size(),
         tokenizer_config: tokenizer.config(),
-    }
+    })
 }

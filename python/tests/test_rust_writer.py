@@ -106,3 +106,29 @@ def test_rust_writer_rejects_add_document_after_view(tmp_path):
     w.add_tokenizer_view("byte-level-v1", 256)
     with pytest.raises(ValueError):
         w.add_document(b"too late")
+
+
+def test_rust_writer_context_manager_writes_on_normal_exit(tmp_path):
+    p = str(tmp_path / "ctx.tset")
+    with tset_rs.Writer(p) as w:
+        w.add_document(b"alpha")
+        w.add_tokenizer_view("byte-level-v1", 256)
+    # File exists and is openable
+    r = tset_rs.Reader(p)
+    assert r.tokenizer_ids() == ["byte-level-v1"]
+
+
+def test_rust_writer_context_manager_skips_on_exception(tmp_path):
+    p = str(tmp_path / "ctx_err.tset")
+
+    class _MarkerError(RuntimeError):
+        pass
+
+    with pytest.raises(_MarkerError):
+        with tset_rs.Writer(p) as w:
+            w.add_document(b"alpha")
+            raise _MarkerError("simulated mid-write failure")
+    # File should NOT exist — exception path drops the writer without flushing.
+    import os
+
+    assert not os.path.exists(p)

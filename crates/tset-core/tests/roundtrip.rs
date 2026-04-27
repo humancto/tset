@@ -1,5 +1,6 @@
 //! Rust writer → Rust reader full round-trip.
 
+use tset_core::hashing::hash_bytes;
 use tset_core::tokenizers::ByteLevelTokenizer;
 use tset_core::{Reader, Writer};
 
@@ -31,6 +32,14 @@ fn rust_writer_then_rust_reader_full_roundtrip() {
         let bytes = r.get_document(h).unwrap();
         assert_eq!(bytes.as_slice(), *d);
     }
+
+    // Explicit manifest-hash assertion: re-hash the manifest bytes from
+    // disk and compare to header.manifest_hash. Reader::open already does
+    // this, but state it in a test to lock the contract.
+    let raw = std::fs::read(&path).unwrap();
+    let off = r.header.manifest_offset as usize;
+    let size = r.header.manifest_size as usize;
+    assert_eq!(hash_bytes(&raw[off..off + size]), r.header.manifest_hash);
 }
 
 #[test]

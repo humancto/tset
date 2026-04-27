@@ -118,6 +118,13 @@ impl Writer {
             "created_at".into(),
             json!(format_iso_utc(current_timestamp())),
         );
+        manifest.insert(
+            "writer".into(),
+            json!({
+                "name": "tset-core (Rust)",
+                "version": env!("CARGO_PKG_VERSION"),
+            }),
+        );
         manifest.insert("schema".into(), json!({"metadata_columns": []}));
         manifest.insert(
             "document_store".into(),
@@ -167,7 +174,7 @@ impl Writer {
                 &ordered_docs,
                 DEFAULT_TOKEN_CHUNK_SIZE,
                 DEFAULT_SPARSE_INDEX_INTERVAL,
-            );
+            )?;
             let v = builds.remove(0);
             let view_offset = HEADER_SIZE as u64 + body.len() as u64;
             body.extend_from_slice(&v.encoded);

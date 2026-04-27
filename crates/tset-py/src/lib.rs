@@ -166,6 +166,29 @@ impl PyWriter {
             .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
         w.close().map_err(map_err)
     }
+
+    fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Context-manager exit: close on success, drop pending state on
+    /// exception (don't write a half-finished file).
+    fn __exit__(
+        &mut self,
+        exc_type: &Bound<'_, PyAny>,
+        _exc_value: &Bound<'_, PyAny>,
+        _traceback: &Bound<'_, PyAny>,
+    ) -> PyResult<bool> {
+        if exc_type.is_none() {
+            if self.inner.is_some() {
+                self.close()?;
+            }
+        } else {
+            // Drop the writer without writing — file at `path` will not exist.
+            self.inner = None;
+        }
+        Ok(false)
+    }
 }
 
 #[pymodule]
