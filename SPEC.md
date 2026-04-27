@@ -284,3 +284,60 @@ The following are deferred and not part of v0.1 binary layout:
 - Dataset-level manifest binding multiple shards (v0.2)
 - Bit-packed token IDs (v0.2)
 - Encryption (v1+)
+
+## 10. Multi-modal extensions (sketch — design under review)
+
+> Status: **design under review**. Not part of v0.3 conformance. Listed
+> here so the trajectory is documented; a future minor (v0.4 or v0.5)
+> will lock the encoding once a design partner with a real multi-modal
+> corpus has reviewed it.
+
+The current document store is byte-oriented: every doc is a `bytes`
+payload. For multi-modal corpora (image-text, audio-text, video-text)
+this works degenerate — you can already store images as bytes — but it
+doesn't bind modalities together at the spec level the way it binds
+tokens to source bytes.
+
+The proposed encoding adds two new section magics:
+
+```
+TMOD — Modality registry. Names + content-type tags.
+TMSC — Multi-modal Source map. Per-document, lists of
+       (modality_name, byte_range, mime_type) tuples.
+```
+
+Documents in the doc store remain content-addressed by BLAKE3 of their
+canonical byte concatenation. The `TMSC` section binds the same
+`doc_hash` to the per-modality byte ranges so downstream consumers can
+extract just the image or just the caption without re-parsing.
+
+Example for image-text:
+
+```text
+modality_registry: {"image": "image/jpeg", "caption": "text/plain"}
+source_map[i]: {
+  doc_hash: <blake3>,
+  ranges: [
+    {modality: "image",   start: 0,    end: 24576},
+    {modality: "caption", start: 24576, end: 24723},
+  ],
+}
+```
+
+Tokenization views remain modality-specific. A `tokenizer_added` audit
+event records which modality the view tokenizes (`payload.modality`).
+
+### What's *not* in scope here
+
+- Dense embeddings as a first-class section type (RFC §11 lists vector
+  storage as v2+).
+- Cross-modal alignment metadata (e.g. CLIP-style image-text similarity).
+  These are model artifacts, not corpus artifacts.
+
+### Compatibility
+
+- v0.1 / v0.2 / v0.3 readers MUST treat `TMOD` / `TMSC` as unknown
+  body sections and skip them via the section-length header.
+- A v0.4+ writer that uses these sections sets a manifest field
+  `multi_modal: true` so older readers can refuse cleanly rather than
+  silently ignore the modality binding.
