@@ -177,6 +177,7 @@ def read_chunk(
     view_offset: int,
     chunk: ChunkInfo,
     vocab_size: int | None = None,
+    bits_per_token: int = 32,
 ) -> np.ndarray:
     abs_offset = view_offset + chunk.byte_offset_in_view
     header = bytes(mm[abs_offset : abs_offset + CHUNK_HEADER_SIZE])
@@ -196,7 +197,14 @@ def read_chunk(
     raw = zstd.ZstdDecompressor().decompress(payload, max_output_size=uncompressed_size)
     if len(raw) != uncompressed_size:
         raise ValueError("chunk decompressed size mismatch")
-    arr = np.frombuffer(raw, dtype=TOKEN_DTYPE)
+    if bits_per_token == 32:
+        arr = np.frombuffer(raw, dtype=np.uint32)
+    elif bits_per_token == 16:
+        arr = np.frombuffer(raw, dtype=np.uint16).astype(np.uint32)
+    else:
+        raise ValueError(
+            f"unsupported bits_per_token {bits_per_token} (must be 16 or 32)"
+        )
     if vocab_size is not None and arr.size and int(arr.max()) >= vocab_size:
         raise ValueError(
             f"chunk contains token id >= vocab_size ({int(arr.max())} >= {vocab_size})"

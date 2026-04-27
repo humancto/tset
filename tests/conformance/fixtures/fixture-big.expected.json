@@ -1,7 +1,7 @@
 {
   "document_count": 100,
-  "manifest_hash": "04d40cdc4a3aff7b40fd9741ae15dbe7d139fd97981c869360491269a3b25899",
-  "manifest_size": 73982,
+  "manifest_hash": "ab842cd4415610a31d069055a576d4d2c1c3ce37a2de4eddfada2449294799a7",
+  "manifest_size": 74002,
   "shard_merkle_root": "c45ddd75e8353b80f6b701c72c158358130947344d7f3fb29f46374be9b78bf1",
   "tokenization_views": {
     "byte-level-v1": {
@@ -11,5 +11,5 @@
       "vocab_size": 256
     }
   },
-  "version_minor": 2
+  "version_minor": 3
 }

@@ -267,6 +267,7 @@ impl Writer {
                 "tokenizer_config": v.tokenizer_config,
                 "config_hash": hex::encode(v.config_hash),
                 "total_tokens": v.total_tokens,
+                "bits_per_token": v.bits_per_token,
                 "chunks": chunks_json,
                 "source_map": source_map_json,
                 "sparse_offset_index": sparse_json,
