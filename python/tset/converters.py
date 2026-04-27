@@ -96,7 +96,14 @@ def webdataset_to_tset(
             for member in tf:
                 if not member.isfile():
                     continue
-                stem, _, ext = member.name.partition(".")
+                # WebDataset stems share a prefix and differ only in the
+                # *trailing* extension. Split on the LAST dot so members
+                # like "0001.metadata.json" yield stem="0001.metadata"
+                # and ext="json", not stem="0001" and ext="metadata.json".
+                if "." in member.name:
+                    stem, ext = member.name.rsplit(".", 1)
+                else:
+                    stem, ext = member.name, ""
                 f = tf.extractfile(member)
                 if f is None:
                     continue
@@ -152,17 +159,53 @@ def mds_to_tset(
         ) from e
     metadata_columns = list(metadata_columns or [])
     n = 0
-    ds = StreamingDataset(local=mds_dir, remote=None, shuffle=False)  # type: ignore[call-arg]
+    try:
+        ds = StreamingDataset(local=mds_dir, remote=None, shuffle=False)  # type: ignore[call-arg]
+    except TypeError as e:
+        # mosaicml-streaming has changed its constructor signature across
+        # versions. Surface a clear hint rather than a bare TypeError.
+        raise RuntimeError(
+            f"StreamingDataset constructor incompatible: {e}. "
+            "tset.converters.mds_to_tset is tested against "
+            "mosaicml-streaming >= 0.7. Try upgrading or pin a known-good "
+            "version."
+        ) from e
     with Writer(tset_path) as w:
         for sample in ds:  # type: ignore[assignment]
             content = sample[content_column]
-            if isinstance(content, str):
-                content = content.encode("utf-8")
+            content = _coerce_to_bytes(content)
             md = {c: sample.get(c) for c in metadata_columns if c in sample}
             w.add_document(content, metadata=md)
             n += 1
         w.add_tokenizer_view(tokenizer)
     return {"input": mds_dir, "output": tset_path, "documents": n}
+
+
+def _coerce_to_bytes(content) -> bytes:
+    """Normalize MDS sample contents to bytes.
+
+    MDS columns commonly carry: str, bytes, np.ndarray (uint8), or
+    np.ndarray (int32 token IDs). The TSET document store is byte-oriented,
+    so we pick a deterministic byte rep:
+      - str → utf-8
+      - bytes/bytearray/memoryview → bytes
+      - numpy array → tobytes() (preserves the original dtype's byte order)
+    Anything else is rejected loudly rather than silently corrupted.
+    """
+    if isinstance(content, str):
+        return content.encode("utf-8")
+    if isinstance(content, (bytes, bytearray, memoryview)):
+        return bytes(content)
+    try:
+        import numpy as np  # type: ignore[import-not-found]
+
+        if isinstance(content, np.ndarray):
+            return content.tobytes()
+    except ImportError:
+        pass
+    raise TypeError(
+        f"mds_to_tset cannot serialize column value of type {type(content).__name__}"
+    )
 
 
 def hf_dataset_view(tset_path: str, tokenizer_id: str = "byte-level-v1"):

@@ -48,6 +48,46 @@ def test_webdataset_to_tset_roundtrip(tmp_path):
         assert py.has_document(hash_bytes(body))
 
 
+def test_webdataset_handles_dotted_extension_stems(tmp_path):
+    """WebDataset filenames like '0001.metadata.txt' must split on the
+    LAST dot — earlier code split on the FIRST and silently dropped these
+    files. Regression test for the must-fix from the PR-5 review."""
+    src = str(tmp_path / "shard.tar")
+    dst = str(tmp_path / "out.tset")
+    with tarfile.open(src, mode="w") as tf:
+        # stem "0001.metadata", ext "txt"
+        for name, body in [
+            ("0001.metadata.txt", b"first body"),
+            ("0001.metadata.json", b'{"label": 0}'),
+            ("0002.foo.txt", b"second body"),
+        ]:
+            info = tarfile.TarInfo(name)
+            info.size = len(body)
+            tf.addfile(info, io.BytesIO(body))
+    result = webdataset_to_tset(src, dst, ByteLevelTokenizer())
+    assert result["documents"] == 2
+    py = PyReader(dst)
+    assert py.has_document(hash_bytes(b"first body"))
+    assert py.has_document(hash_bytes(b"second body"))
+
+
+def test_webdataset_non_utf8_body_passes_through(tmp_path):
+    """The Writer takes raw bytes; the converter must not silently drop
+    or mangle non-UTF-8 content."""
+    src = str(tmp_path / "shard.tar")
+    dst = str(tmp_path / "out.tset")
+    payload = b"\xff\xfe\x00\xff binary blob"  # not valid UTF-8
+    with tarfile.open(src, mode="w") as tf:
+        info = tarfile.TarInfo("0001.txt")
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+    result = webdataset_to_tset(src, dst, ByteLevelTokenizer())
+    assert result["documents"] == 1
+    py = PyReader(dst)
+    assert py.has_document(hash_bytes(payload))
+    assert py.get_document(hash_bytes(payload)) == payload
+
+
 def test_webdataset_skip_samples_missing_content(tmp_path):
     src = str(tmp_path / "shard.tar")
     dst = str(tmp_path / "out.tset")

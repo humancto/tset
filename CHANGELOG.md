@@ -43,16 +43,18 @@ PR 5: format converters + HuggingFace adapter + criterion benchmarks.
 
 ### Tests
 
-- 5 new Python tests in `python/tests/test_converters_pr5.py`:
-  WebDataset round-trip; WebDataset skips samples without content
-  rather than failing; MDS without `mosaicml-streaming` raises
-  RuntimeError with install hint; HF generator yields
-  `text + doc_hash`; HF without `datasets` raises clear error.
+- 7 new Python tests in `python/tests/test_converters_pr5.py`:
+  WebDataset round-trip; WebDataset handles dotted-extension stems
+  (`0001.metadata.txt` → stem=`0001.metadata`, ext=`txt`); WebDataset
+  preserves non-UTF-8 bodies; WebDataset skips samples missing content;
+  MDS without `mosaicml-streaming` raises RuntimeError with install hint;
+  HF generator yields `text + doc_hash`; HF without `datasets` raises
+  clear error.
 - All criterion benches compile and run a smoke pass.
 
 ### Test totals
 
-- 35 Rust + 84 Python = 119, all stable
+- 35 Rust + 86 Python = 121, all stable
 
 ### Deferred to PR 6
 
