@@ -102,18 +102,19 @@ def test_audit_log_intact_after_append_view(tmp_path):
         assert kinds.count("tokenizer_added") == 2
 
 
-def test_reader_rejects_oob_token_id_on_read(tmp_path):
+def test_reader_rejects_oob_token_id_on_read(tmp_path, monkeypatch):
+    """In-memory manifest tamper test — only the Python streaming path
+    sees in-memory state. Force the Python path; the Rust path re-opens
+    the file from disk and would ignore the in-memory mutation."""
+    monkeypatch.setenv("TSET_PREFER_RUST", "0")
     p = str(tmp_path / "vocab.tset")
     with Writer(p) as w:
         w.add_document(b"abc")
         w.add_tokenizer_view(ByteLevelTokenizer())
-    # Surgically lower vocab_size in the manifest so a present token id
-    # exceeds the new bound; reader must refuse to serve it.
     with Reader(p) as r:
         view = r.manifest["tokenization_views"]["byte-level-v1"]
         assert view["vocab_size"] == 256
         view["vocab_size"] = 10  # 'a' = 97 > 10 → out of range
-        # Bypass manifest hash check by using the in-memory manifest only
         with pytest.raises(ValueError, match="token id >= vocab_size"):
             list(r.stream_tokens("byte-level-v1", 4))
 

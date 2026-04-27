@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/tset-core",
     "crates/tset-py",
+    "crates/tset-cli",
 ]
 
 [workspace.package]

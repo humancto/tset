@@ -1,0 +1,20 @@
+[package]
+name = "tset-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Command-line tool for inspecting, verifying, and converting TSET shards"
+
+[[bin]]
+name = "tset"
+path = "src/main.rs"
+
+[dependencies]
+tset-core = { path = "../tset-core" }
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

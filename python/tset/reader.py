@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import importlib.util
 import mmap
+import os
+from functools import lru_cache
 from typing import Iterator
 
 import numpy as np
+
+
+@lru_cache(maxsize=1)
+def _rust_available() -> bool:
+    return importlib.util.find_spec("tset_rs") is not None
 
 from tset import manifest as M
 from tset.audit_log import AuditLog
@@ -134,7 +142,31 @@ class Reader:
         ``batch_size`` long and entirely belongs to ``doc_hash``. Iterating
         per-document lets dataset-level exclusion overlays drop tokens
         without leaking partial document content across batch boundaries.
+
+        If the optional `tset_rs` PyO3 binding is installed and
+        `TSET_PREFER_RUST` is not set to "0", the hot path delegates to
+        the Rust reader for streaming. Set `TSET_PREFER_RUST=0` to force
+        the pure-Python path (useful for differential testing).
         """
+        if _rust_available() and os.environ.get("TSET_PREFER_RUST", "1") != "0":
+            yield from self._stream_tokens_rust(tokenizer_id, batch_size)
+            return
+        yield from self._stream_tokens_py(tokenizer_id, batch_size)
+
+    def _stream_tokens_rust(
+        self, tokenizer_id: str, batch_size: int
+    ) -> Iterator[tuple[np.ndarray, bytes]]:
+        import tset_rs  # type: ignore[import-not-found]
+
+        rs = tset_rs.Reader(self.path)
+        for tokens_bytes, doc_hash in rs.stream_tokens(tokenizer_id):
+            arr = np.frombuffer(tokens_bytes, dtype=np.uint32)
+            for i in range(0, int(arr.size), batch_size):
+                yield arr[i : i + batch_size], bytes(doc_hash)
+
+    def _stream_tokens_py(
+        self, tokenizer_id: str, batch_size: int = 1024
+    ) -> Iterator[tuple[np.ndarray, bytes]]:
         view = self._open_view(tokenizer_id)
         view_offset = view["view_offset"]
         chunks = view["chunks"]

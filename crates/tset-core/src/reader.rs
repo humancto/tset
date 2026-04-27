@@ -261,9 +261,19 @@ impl Reader {
         let mut chunks = Vec::with_capacity(chunks_arr.len());
         for c in chunks_arr {
             // v0.1 shards: content_hash absent. v0.2+ shards: present and verified.
+            // Strict v0.2: when the shard's version_minor is 2+, every chunk
+            // MUST carry a content_hash (otherwise the integrity contract is
+            // not actually enforced).
             let content_hash = match c.get("content_hash").and_then(Value::as_str) {
                 Some(s) if !s.is_empty() => Some(parse_hash(s, "chunk.content_hash length")?),
-                _ => None,
+                _ => {
+                    if self.header.version_minor >= 2 {
+                        return Err(TsetError::BadManifest(
+                            "v0.2 shard missing chunk.content_hash",
+                        ));
+                    }
+                    None
+                }
             };
             chunks.push(ChunkInfo {
                 byte_offset_in_view: required_u64(

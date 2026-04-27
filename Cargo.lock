@@ -427,6 +427,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tset-cli"
+version = "0.2.0"
+dependencies = [
+ "hex",
+ "serde_json",
+ "tempfile",
+ "tset-core",
+]
+
+[[package]]
 name = "tset-core"
 version = "0.2.0"
 dependencies = [

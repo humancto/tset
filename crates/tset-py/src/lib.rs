@@ -84,6 +84,10 @@ impl PyReader {
     /// Returns a list of `(tokens_bytes_le_u32, doc_hash_bytes)` tuples.
     /// Tokens are returned as raw little-endian u32 bytes — Python wraps
     /// them in `numpy.frombuffer(tokens, dtype=np.uint32)`.
+    ///
+    /// Implementation: zero-copy reinterpretation of the inner u32 Vec as
+    /// little-endian bytes (sound on all little-endian architectures —
+    /// the entire format is LE-only).
     fn stream_tokens<'py>(
         &self,
         py: Python<'py>,
@@ -93,12 +97,14 @@ impl PyReader {
         let pieces = view.iter_per_doc().map_err(map_err)?;
         let list = PyList::empty_bound(py);
         for (tokens, doc_hash) in pieces {
-            let mut buf = Vec::with_capacity(tokens.len() * 4);
-            for t in tokens {
-                buf.extend_from_slice(&t.to_le_bytes());
-            }
+            let bytes_view: &[u8] = unsafe {
+                std::slice::from_raw_parts(
+                    tokens.as_ptr() as *const u8,
+                    std::mem::size_of_val(tokens.as_slice()),
+                )
+            };
             let tup = (
-                PyBytes::new_bound(py, &buf),
+                PyBytes::new_bound(py, bytes_view),
                 PyBytes::new_bound(py, &doc_hash),
             );
             list.append(tup)?;

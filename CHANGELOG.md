@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] — 2026-04-27
+
+PR 3: streaming throughput win + CLI + strict v0.2.
+
+### Reader
+
+- **Strict v0.2 enforcement.** `Reader::open` rejects v0.2 shards
+  (`version_minor=2`) that lack `chunk.content_hash` on any chunk. v0.1
+  shards continue to be accepted.
+
+### Python adapter
+
+- `tset.Reader.stream_tokens` now delegates the hot path to the
+  Rust reader via `tset_rs.Reader.stream_tokens` when the optional
+  `tset_rs` wheel is installed. Set `TSET_PREFER_RUST=0` to force the
+  pure-Python path (used by one test that intentionally mutates the
+  in-memory manifest, and useful for differential testing).
+- Zero-copy reinterpretation of the Rust `Vec<u32>` token buffer as
+  little-endian bytes via `PyBytes::new_bound` over a raw byte view.
+  The format is little-endian-only, so this is sound on every
+  supported architecture.
+
+### Benchmark B
+
+- Rewritten as a head-to-head: Python reader vs Rust-backed reader vs
+  raw `np.fromfile` on the same shard, all in one run. Persists both
+  numbers in the JSON result.
+- Measured on a 200 MB synthetic corpus: **2.85× speedup** for the
+  Rust-backed adapter over pure Python streaming
+  (~55M tok/s vs ~19M tok/s). At 50 MB and below the overhead of
+  `Reader::open`'s reproducibility check dominates and the two paths
+  trade blows. Real benchmark B (multi-node S3) is still v0.3+.
+
+### tset-cli (new crate)
+
+- `crates/tset-cli` produces a single static `tset` binary built into
+  `target/release/tset`. Subcommands: `inspect`, `verify`,
+  `convert jsonl`, `version`, `help`.
+- `--text-field`, `--tokenizer`, `--vocab` flags on `convert jsonl`.
+- 4 end-to-end integration tests covering the round-trip and error paths.
+- Intentionally argparse-free (no clap) for now — the option surface
+  is small enough that hand-rolled parsing keeps the binary lean.
+
+### Test totals
+
+- 29 Rust tests (18 unit + 5 malformed-input fuzz + 2 roundtrip + 4 CLI)
+- 70 Python tests (unchanged surface; suite green with delegation on)
+- All stable across 5 trials
+
+### Deferred to PR 4
+
+- `DatasetWriter` (multi-shard) in Rust
+- `MetadataColumns` + predicate compiler in Rust
+- `Mixture`/`WeightedSampler` in Rust
+- Drop legacy Python writer/reader (`python/tset/__init__.py`
+  re-exports from `tset_rs`)
+- Format converters: parquet, mds, webdataset
+- `tset-bench` (criterion) covering all five RFC benchmarks A/B/C/D/E
+
 ## [0.2.0] — 2026-04-27
 
 Rust port plus per-chunk content hashing.
