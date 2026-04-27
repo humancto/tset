@@ -46,6 +46,11 @@ pub struct Writer {
     audit: AuditLog,
     columns: MetadataColumns,
     subsets: Vec<Subset>,
+    /// When true, emit TSMT/TLOG/TCOL on-disk sections in addition to
+    /// the in-manifest forms. Future v0.4 readers will prefer the
+    /// on-disk sections; current v0.3 readers continue to read the
+    /// in-manifest forms.
+    emit_binary_sections: bool,
 }
 
 impl Writer {
@@ -79,7 +84,16 @@ impl Writer {
             audit,
             columns: MetadataColumns::new(),
             subsets: Vec::new(),
+            emit_binary_sections: false,
         }
+    }
+
+    /// Toggle on emission of TSMT/TLOG/TCOL on-disk sections alongside
+    /// the in-manifest forms. Default off to preserve byte-exact parity
+    /// with v0.1–v0.3 conformance fixtures.
+    pub fn enable_binary_sections(&mut self) -> &mut Self {
+        self.emit_binary_sections = true;
+        self
     }
 
     pub fn add_document(&mut self, content: &[u8]) -> TsetResult<Hash> {
@@ -149,6 +163,7 @@ impl Writer {
     }
 
     fn encode(self) -> TsetResult<Vec<u8>> {
+        let emit_binary_sections = self.emit_binary_sections;
         let Self {
             shard_id,
             docs,
@@ -334,6 +349,69 @@ impl Writer {
                 .collect::<Vec<_>>()),
         );
         manifest.insert("smt_version".into(), json!("v0.1-fixed-256"));
+
+        // Emit on-disk binary sections (opt-in). They sit AFTER all
+        // tokenization views and BEFORE the manifest. Manifest gets
+        // pointer fields so v0.4+ readers can locate them in O(1).
+        // Existing v0.1–v0.3 readers ignore the unknown manifest keys
+        // and the unknown body sections (skippable via
+        // payload_size header on each section).
+        if emit_binary_sections {
+            use crate::sections::{encode_tcol_section, encode_tlog_section, encode_tsmt_section};
+
+            // SMT
+            let tsmt_bytes = encode_tsmt_section(&smt.present_keys(), &smt_root);
+            let tsmt_offset = HEADER_SIZE as u64 + body.len() as u64;
+            body.extend_from_slice(&tsmt_bytes);
+            manifest.insert(
+                "smt_section".into(),
+                json!({
+                    "offset": tsmt_offset,
+                    "size": tsmt_bytes.len() as u64,
+                }),
+            );
+
+            // Audit log (must be encoded BEFORE the manifest is finalized
+            // — same as in-manifest form, just relocated)
+            let audit_json = audit.to_json();
+            let log_root_hex = audit_json
+                .get("log_root")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let mut log_root = [0u8; HASH_SIZE];
+            if let Ok(b) = hex::decode(log_root_hex) {
+                if b.len() == HASH_SIZE {
+                    log_root.copy_from_slice(&b);
+                }
+            }
+            let tlog_bytes = encode_tlog_section(&audit_json, &log_root);
+            let tlog_offset = HEADER_SIZE as u64 + body.len() as u64;
+            body.extend_from_slice(&tlog_bytes);
+            manifest.insert(
+                "audit_log_section".into(),
+                json!({
+                    "offset": tlog_offset,
+                    "size": tlog_bytes.len() as u64,
+                }),
+            );
+
+            // Columns
+            let cols_json = columns.to_json();
+            let row_count = cols_json
+                .get("row_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let tcol_bytes = encode_tcol_section(&cols_json, row_count);
+            let tcol_offset = HEADER_SIZE as u64 + body.len() as u64;
+            body.extend_from_slice(&tcol_bytes);
+            manifest.insert(
+                "metadata_columns_section".into(),
+                json!({
+                    "offset": tcol_offset,
+                    "size": tcol_bytes.len() as u64,
+                }),
+            );
+        }
 
         let manifest_value = Value::Object(manifest);
         let manifest_bytes = canonical_json(&manifest_value).into_bytes();
