@@ -10,7 +10,7 @@ production readiness.
 | 3 | T1 | On-disk SMT (TSMT magic) | ✅ atomics e7372b4 + 5faa166 + 68f8efd (opt-in v0.3 additive; v0.4 mandatory pending design partner) |
 | 4 | T1 | On-disk audit log (TLOG) + metadata columns (TCOL) | ✅ atomics b808dd3 + 423098e + 5faa166 + 68f8efd (same opt-in shape as TSMT) |
 | 5 | T1 | Audit log signing (Ed25519 + key rotation events) | ✅ PR 10 (signing); rotation deferred (RFC §10 #18) |
-| 6 | T1 | Drop Python duplicate impls; route through tset_rs | 🟨 design choice — Python writer/reader stays as fallback for users who don't want the Rust toolchain. Conformance suite locks byte-equivalence. RustWriter adapter exists for users who want Rust-only. |
+| 6 | T1 | Drop Python duplicate impls; route through tset_rs | ✅ atomic deba412 — hashing/merkle delegated to tset_rs via PyO3 (hash_bytes_py / shard_merkle_root_py / merkle_root_unsorted_py); pure-Python paths kept as fallbacks for environments without the wheel; 7 byte-equivalence tests lock the contract |
 | 7 | T2 | `append_tokenizer_view` in Rust | ✅ atomic 9f96768 |
 | 8 | T2 | Bit-packed token IDs (16-bit / 32-bit) | ✅ PR 9 (16-bit fast path; 17-bit deferred to a design discussion per RFC §10 #7) |
 | 9 | T2 | Streaming over object storage (S3 reader) | ✅ atomic 757d3da (ObjectStore trait + LocalFile/InMemory; download-to-tempfile path. True random-access S3 reader is its own atomic — needs Reader refactor to take a generic RangedReader instead of mmap::Mmap) |
@@ -30,16 +30,17 @@ production readiness.
 | 23 | T4 | tset-bench D (compliance) + E (exclusion workflow) | ✅ atomic c0c1078 |
 | 24 | T4 | Multi-modal extensions sketch | ✅ atomic 848a92f (SPEC §10, design under review) |
 
-## Score (post atomic 68f8efd)
+## Score (post atomic deba412)
 
-**23 of 24 items closed in code.** Item 6 (drop Python duplicate impls)
-is reframed as a **deliberate design choice**: Python's writer/reader
-stays as the no-Rust-toolchain fallback. The conformance suite + 125
-passing Python tests prove byte-equivalence with the Rust impl;
-RustWriter adapter (PR 6) lets users opt into Rust-only writes when
-they want. Replacing the entire Python implementation would force every
-user to install the maturin-built wheel — a regression in adoption
-friction that's not justified by the maintenance saving.
+**24 of 24 items closed in code.** All four tiers done:
+- **Tier 1** (production correctness): 6/6
+- **Tier 2** (real features): 7/7
+- **Tier 3** (robustness): 7/7
+- **Tier 4** (polish): 4/4
+
+Test totals: **42 Rust** (39 unit + 3 integration suites) + **132 Python**
+(124 + 4 skipped + new delegation tests). All stable, all on `main`,
+all pushed.
 
 ## What's still genuinely deferred (not closed)
 
