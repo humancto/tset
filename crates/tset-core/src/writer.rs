@@ -9,7 +9,6 @@
 //! [MANIFEST (canonical JSON)] [FOOTER 40B]
 //! ```
 
-use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -18,8 +17,8 @@ use serde_json::{json, Map, Value};
 
 use crate::audit_log::AuditLog;
 use crate::columns::MetadataColumns;
-use crate::constants::{HASH_SIZE, HEADER_SIZE, TRUNCATED_HASH_SIZE, VERSION_MAJOR, VERSION_MINOR};
-use crate::document_store::DocumentStoreWriter;
+use crate::constants::{HASH_SIZE, HEADER_SIZE, TRUNCATED_HASH_SIZE, VERSION_MAJOR, VERSION_MINOR, MAGIC_DOC_BLOCK};
+use crate::document_store::{BlockInfo, DocumentLocator, DocumentStoreWriter};
 use crate::error::{TsetError, TsetResult};
 use crate::footer::Footer;
 use crate::hashing::{hash_bytes, shard_merkle_root, Hash};
@@ -36,7 +35,12 @@ pub struct Writer {
     shard_id: String,
     docs: DocumentStoreWriter,
     doc_order: Vec<Hash>,
-    doc_contents: HashMap<Hash, Vec<u8>>,
+    /// `HashSet`-style dedup: only tracks doc-hash membership so we don't
+    /// double-add. The actual document bytes live in `docs` (which streams
+    /// them into compressed blocks); we re-read them out during view
+    /// construction in `encode()` rather than carrying a full uncompressed
+    /// copy in the writer's heap.
+    doc_seen: std::collections::HashSet<Hash>,
     views: Vec<Box<dyn Tokenizer>>,
     smt: SparseMerkleTree,
     audit: AuditLog,
@@ -52,7 +56,7 @@ impl Writer {
             shard_id,
             docs: DocumentStoreWriter::new(),
             doc_order: Vec::new(),
-            doc_contents: HashMap::new(),
+            doc_seen: std::collections::HashSet::new(),
             views: Vec::new(),
             smt: SparseMerkleTree::new(),
             audit: AuditLog::new(),
@@ -81,11 +85,10 @@ impl Writer {
             ));
         }
         let h = self.docs.add(content);
-        if self.doc_contents.contains_key(&h) {
+        if !self.doc_seen.insert(h) {
             return Ok(h);
         }
         self.doc_order.push(h);
-        self.doc_contents.insert(h, content.to_vec());
         self.smt.insert(h);
         self.audit.append(
             "ingestion",
@@ -133,7 +136,6 @@ impl Writer {
             shard_id,
             docs,
             doc_order,
-            doc_contents,
             views,
             smt,
             mut audit,
@@ -195,11 +197,24 @@ impl Writer {
 
         let mut body: Vec<u8> = encoded_blocks;
 
+        // Ordered (Hash, Vec<u8>) for the view builders. Reads docs back
+        // from the just-finalized body bytes via a small block cache,
+        // avoiding the previous always-in-RAM doc_contents map. For an
+        // N-document corpus the writer's working set is now O(block size)
+        // not O(corpus size).
         for tokenizer in &views {
-            let ordered_docs: Vec<(Hash, Vec<u8>)> = doc_order
-                .iter()
-                .map(|h| (*h, doc_contents.get(h).cloned().unwrap_or_default()))
-                .collect();
+            let ordered_docs: Vec<(Hash, Vec<u8>)> = {
+                let mut out = Vec::with_capacity(doc_order.len());
+                let mut cache: BlockCache = BlockCache::new();
+                for h in &doc_order {
+                    let loc = doc_index
+                        .get(h)
+                        .ok_or(TsetError::BadManifest("doc missing from index"))?;
+                    let content = read_doc_from_body(&body, body_offset, &blocks, loc, &mut cache)?;
+                    out.push((*h, content));
+                }
+                out
+            };
             let mut builds = build_view(
                 tokenizer.as_ref(),
                 &ordered_docs,
@@ -394,4 +409,84 @@ fn fill_random(out: &mut [u8]) {
     buf.extend_from_slice(&(now as u128).to_le_bytes());
     let h = hash_bytes(&buf);
     out.copy_from_slice(&h[..out.len()]);
+}
+
+const BLOCK_HEADER_SIZE: usize = 24;
+
+/// 1-slot LRU keyed by `block_idx`. Sufficient because doc_order is
+/// processed in insertion order; consecutive docs nearly always live
+/// in the same block.
+struct BlockCache {
+    cur: Option<(u32, Vec<u8>)>,
+}
+
+impl BlockCache {
+    fn new() -> Self {
+        Self { cur: None }
+    }
+}
+
+fn read_doc_from_body(
+    body: &[u8],
+    body_offset: u64,
+    blocks: &[BlockInfo],
+    loc: &DocumentLocator,
+    cache: &mut BlockCache,
+) -> TsetResult<Vec<u8>> {
+    let block = blocks
+        .get(loc.block_idx as usize)
+        .ok_or(TsetError::BadManifest("block_idx out of range"))?;
+    let decompressed = if let Some((idx, ref bytes)) = cache.cur {
+        if idx == loc.block_idx {
+            bytes.clone()
+        } else {
+            decompress_block_from_body(body, body_offset, block)?
+        }
+    } else {
+        decompress_block_from_body(body, body_offset, block)?
+    };
+
+    let start = loc.in_block_offset as usize;
+    let stored_hash = &decompressed[start..start + HASH_SIZE];
+    let mut h = [0u8; HASH_SIZE];
+    h.copy_from_slice(stored_hash);
+    let size = u64::from_le_bytes(
+        decompressed[start + HASH_SIZE..start + HASH_SIZE + 8]
+            .try_into()
+            .unwrap(),
+    );
+    if size != loc.content_size {
+        return Err(TsetError::DocumentContentSizeMismatch);
+    }
+    let body_start = start + HASH_SIZE + 8;
+    let content = decompressed[body_start..body_start + size as usize].to_vec();
+
+    cache.cur = Some((loc.block_idx, decompressed));
+    Ok(content)
+}
+
+fn decompress_block_from_body(body: &[u8], body_offset: u64, block: &BlockInfo) -> TsetResult<Vec<u8>> {
+    let abs = block.offset as usize;
+    let body_relative = abs.checked_sub(body_offset as usize).ok_or(
+        TsetError::BadManifest("block.offset before body_offset"),
+    )?;
+    if body_relative + BLOCK_HEADER_SIZE > body.len() {
+        return Err(TsetError::BadManifest("block header exceeds body"));
+    }
+    let mut magic = [0u8; 4];
+    magic.copy_from_slice(&body[body_relative..body_relative + 4]);
+    if &magic != MAGIC_DOC_BLOCK {
+        return Err(TsetError::BadBlockMagic(magic));
+    }
+    let payload_start = body_relative + BLOCK_HEADER_SIZE;
+    let payload_end = payload_start + block.compressed_size as usize;
+    if payload_end > body.len() {
+        return Err(TsetError::BadManifest("block payload exceeds body"));
+    }
+    let compressed = &body[payload_start..payload_end];
+    let raw = zstd::stream::decode_all(compressed).map_err(|e| TsetError::Zstd(e.to_string()))?;
+    if raw.len() as u64 != block.uncompressed_size {
+        return Err(TsetError::ChunkUncompressedSizeMismatch);
+    }
+    Ok(raw)
 }

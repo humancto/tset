@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.6] — 2026-04-27
+
+PR 8: streaming-writer pass for the Rust core.
+
+### Rust writer
+
+- **Drop the `doc_contents: HashMap<Hash, Vec<u8>>` member.** This was
+  the writer's largest memory hog — kept an uncompressed copy of every
+  document until `close()` to feed `build_view`. Replaced with a
+  `doc_seen: HashSet<Hash>` for dedup; documents are re-read from the
+  just-finalized doc-store body during view construction via a 1-block
+  LRU cache. Working set is now O(block target bytes) regardless of
+  corpus size.
+- New helpers `read_doc_from_body` + `decompress_block_from_body` +
+  `BlockCache` in `crates/tset-core/src/writer.rs`.
+
+### Python hashing
+
+- Documented that `tset.hashing` mirrors `tset_core::hashing` exactly
+  and is verified by the conformance suite. We deliberately don't
+  delegate to `tset_rs` here because the FFI cost on small
+  per-document calls dominates.
+
+### Tests
+
+- New `python/tests/test_pr8_streaming.py`:
+  - 50 MB corpus through the Rust writer (12.5k × 4 KB docs)
+  - 5 MB corpus through the Python writer (still in-memory)
+  - dedup verification with `doc_contents` gone
+
+### Test totals
+
+- 36 Rust + 111 Python = 147
+
+### What's still next
+
+- Python writer still keeps documents in memory (mirrors the old Rust
+  behavior). PR 9 will land the same simplification on the Python
+  side, OR the route-through-tset_rs migration that obviates the
+  Python writer entirely.
+
 ## [0.2.5] — 2026-04-27
 
 PR 7: production-readiness pass — Tier 1/2/3 items from ROADMAP.md.
