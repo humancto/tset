@@ -550,6 +550,51 @@ fn verify_audit_signature(
     verify_signature(public_key, message, signature)
 }
 
+/// BLAKE3 hash of arbitrary bytes — exposes tset_core::hashing::hash_bytes
+/// to Python so tset.hashing can delegate without re-implementing.
+#[pyfunction]
+fn hash_bytes_py<'py>(py: Python<'py>, data: &[u8]) -> Bound<'py, PyBytes> {
+    PyBytes::new_bound(py, &tset_core::hashing::hash_bytes(data))
+}
+
+/// shard_merkle_root over a list of 32-byte hashes (sorted). Mirrors
+/// tset.hashing.shard_merkle_root.
+#[pyfunction]
+fn shard_merkle_root_py<'py>(
+    py: Python<'py>,
+    leaves: Vec<Vec<u8>>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let mut arr: Vec<[u8; 32]> = Vec::with_capacity(leaves.len());
+    for l in leaves {
+        if l.len() != 32 {
+            return Err(PyValueError::new_err("each leaf must be 32 bytes"));
+        }
+        let mut h = [0u8; 32];
+        h.copy_from_slice(&l);
+        arr.push(h);
+    }
+    Ok(PyBytes::new_bound(py, &tset_core::hashing::shard_merkle_root(&arr)))
+}
+
+/// merkle_root over a list of leaves IN GIVEN ORDER (no sort). Mirrors
+/// tset.hashing.merkle_root.
+#[pyfunction]
+fn merkle_root_unsorted_py<'py>(
+    py: Python<'py>,
+    leaves: Vec<Vec<u8>>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let mut arr: Vec<[u8; 32]> = Vec::with_capacity(leaves.len());
+    for l in leaves {
+        if l.len() != 32 {
+            return Err(PyValueError::new_err("each leaf must be 32 bytes"));
+        }
+        let mut h = [0u8; 32];
+        h.copy_from_slice(&l);
+        arr.push(h);
+    }
+    Ok(PyBytes::new_bound(py, &tset_core::hashing::merkle_root_unsorted(&arr)))
+}
+
 /// Append a new tokenization view to an existing TSET shard, in-place.
 /// Mirrors `tset.writer.append_tokenizer_view` (Python).
 #[pyfunction]
@@ -580,6 +625,9 @@ fn tset_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(signing_public_key, m)?)?;
     m.add_function(wrap_pyfunction!(verify_audit_signature, m)?)?;
     m.add_function(wrap_pyfunction!(append_tokenizer_view, m)?)?;
+    m.add_function(wrap_pyfunction!(hash_bytes_py, m)?)?;
+    m.add_function(wrap_pyfunction!(shard_merkle_root_py, m)?)?;
+    m.add_function(wrap_pyfunction!(merkle_root_unsorted_py, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

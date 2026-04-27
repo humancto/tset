@@ -1,19 +1,32 @@
 """BLAKE3 hashing + Merkle helpers.
 
-The pure-Python impls below mirror `tset-core::hashing` exactly (verified
-by the conformance suite). When the optional `tset_rs` PyO3 wheel is
-installed and the Python interpreter has a valid `blake3` C-extension,
-`hash_bytes` is the Python `blake3` package's primitive (≈10× faster
-than a re-implementation). Merkle helpers then call into it.
+When the optional `tset_rs` PyO3 wheel is installed, `merkle_root` and
+`shard_merkle_root` delegate to the Rust core for byte-exact agreement
+with `tset_core::hashing` (and a marginal speed bump on large inputs).
 
-We don't delegate `merkle_root` / `shard_merkle_root` directly to
-`tset_rs` — the function-call boundary cost (allocate Python list of
-bytes → cross PyO3 → Vec<Hash>) on small inputs would erase the
-benefit. The Rust impl is byte-equivalent and the conformance suite
-proves it.
+`hash_bytes` always uses the local `blake3` Python package — its FFI
+overhead is high enough that delegating per-call would be slower than
+the C extension for small inputs.
+
+The pure-Python paths below remain as fallbacks for environments
+without `tset_rs`. The conformance suite proves byte-equivalence.
 """
 
+from __future__ import annotations
+
 from blake3 import blake3
+
+
+def _try_import_rust():
+    try:
+        import tset_rs
+
+        return tset_rs
+    except ImportError:
+        return None
+
+
+_RUST = _try_import_rust()
 
 
 def hash_bytes(data: bytes) -> bytes:
@@ -25,9 +38,10 @@ def hash_hex(data: bytes) -> str:
 
 
 def merkle_root(leaves: list[bytes]) -> bytes:
-    """Balanced binary Merkle tree over `leaves`. Last node is duplicated for
-    odd levels. Domain-separated leaf/internal prefixes. Mirrors
-    `tset_core::hashing::merkle_root_unsorted`."""
+    """Balanced binary Merkle tree over `leaves`. Last node is duplicated
+    for odd levels. Domain-separated leaf/internal prefixes."""
+    if _RUST is not None:
+        return bytes(_RUST.merkle_root_unsorted_py(leaves))
     if not leaves:
         return b"\x00" * 32
     level = [hash_bytes(b"\x00" + leaf) for leaf in leaves]
@@ -42,6 +56,8 @@ def merkle_root(leaves: list[bytes]) -> bytes:
 
 
 def shard_merkle_root(doc_hashes: list[bytes]) -> bytes:
-    """Per SPEC §6: balanced binary Merkle tree over sorted doc hashes.
-    Mirrors `tset_core::hashing::shard_merkle_root`."""
+    """Per SPEC §6: balanced binary Merkle tree over **sorted** doc hashes.
+    Delegates to `tset_rs.shard_merkle_root_py` when available."""
+    if _RUST is not None:
+        return bytes(_RUST.shard_merkle_root_py(doc_hashes))
     return merkle_root(sorted(doc_hashes))
