@@ -940,6 +940,7 @@ name = "tset-bench"
 version = "0.2.0"
 dependencies = [
  "criterion",
+ "serde_json",
  "tempfile",
  "tset-core",
 ]
