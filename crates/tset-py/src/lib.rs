@@ -142,6 +142,67 @@ impl PyReader {
         self.inner.doc_hashes().map(|h| hex::encode(h)).collect()
     }
 
+    /// On-disk TSMT section. Returns None if the shard wasn't written
+    /// with binary sections enabled. The dict carries: smt_root (32B
+    /// bytes), num_present (int), present_keys (list of 32B bytes).
+    fn on_disk_smt<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, pyo3::types::PyDict>>> {
+        let Some(section) = self.inner.on_disk_smt().map_err(map_err)? else {
+            return Ok(None);
+        };
+        let d = pyo3::types::PyDict::new_bound(py);
+        d.set_item("smt_root", PyBytes::new_bound(py, &section.smt_root))?;
+        d.set_item("num_present", section.num_present)?;
+        let keys: Vec<Bound<'py, PyBytes>> = section
+            .present_keys
+            .iter()
+            .map(|k| PyBytes::new_bound(py, k))
+            .collect();
+        d.set_item("present_keys", keys)?;
+        Ok(Some(d))
+    }
+
+    /// On-disk TLOG section. Returns None if absent. The dict carries
+    /// log_root (32B bytes) and audit_json (the canonical JSON dict
+    /// that the in-manifest audit_log mirrors).
+    fn on_disk_audit_log<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, pyo3::types::PyDict>>> {
+        let Some(section) = self.inner.on_disk_audit_log().map_err(map_err)? else {
+            return Ok(None);
+        };
+        let d = pyo3::types::PyDict::new_bound(py);
+        d.set_item("log_root", PyBytes::new_bound(py, &section.log_root))?;
+        // Round-trip the audit_json through serde_json::to_string then
+        // Python json.loads — keeps the conversion bounded and avoids
+        // hand-walking serde_json::Value into PyAny.
+        let s = serde_json::to_string(&section.audit_json)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_module = py.import_bound("json")?;
+        let parsed = json_module.call_method1("loads", (s,))?;
+        d.set_item("audit_json", parsed)?;
+        Ok(Some(d))
+    }
+
+    /// On-disk TCOL section. Returns None if absent. Dict carries
+    /// row_count (int) and columns_json.
+    fn on_disk_columns<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, pyo3::types::PyDict>>> {
+        let Some(section) = self.inner.on_disk_columns().map_err(map_err)? else {
+            return Ok(None);
+        };
+        let d = pyo3::types::PyDict::new_bound(py);
+        d.set_item("row_count", section.row_count)?;
+        let s = serde_json::to_string(&section.columns_json)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_module = py.import_bound("json")?;
+        let parsed = json_module.call_method1("loads", (s,))?;
+        d.set_item("columns_json", parsed)?;
+        Ok(Some(d))
+    }
+
     fn smt_root<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
         PyBytes::new_bound(py, &self.inner.smt_root())
     }
@@ -329,6 +390,20 @@ impl PyWriter {
             }
         };
         Ok(PyBytes::new_bound(py, &h))
+    }
+
+    /// Toggle on emission of v0.3.2 binary sections (TSMT/TLOG/TCOL).
+    /// Default off so existing fixtures stay byte-stable. Returns self
+    /// for chaining; in Python use as `Writer(p).enable_binary_sections()
+    /// .add_document(...)`.
+    fn enable_binary_sections(slf: pyo3::PyRefMut<'_, Self>) -> PyResult<()> {
+        let mut slf = slf;
+        let w = slf
+            .inner
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
+        w.enable_binary_sections();
+        Ok(())
     }
 
     fn add_subset(
