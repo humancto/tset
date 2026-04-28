@@ -51,7 +51,7 @@ fn print_usage() {
     println!("USAGE:");
     println!("    tset inspect <path>");
     println!("    tset verify <path>");
-    println!("    tset convert jsonl <src.jsonl> <dst.tset> [--text-field FIELD] [--tokenizer ID] [--vocab N]");
+    println!("    tset convert jsonl <src.jsonl> <dst.tset> [--text-field FIELD] [--tokenizer ID] [--vocab N] [--binary-sections]");
     println!("    tset version");
 }
 
@@ -73,6 +73,30 @@ fn cmd_inspect(args: &[&str]) -> Result<(), String> {
     for tid in &views {
         let total = r.view_total_tokens(tid).map_err(|e| e.to_string())?;
         println!("  - {tid}: {total} tokens");
+    }
+
+    // v0.3.2 on-disk binary sections (TSMT/TLOG/TCOL). Show pointers
+    // when present.
+    let mut section_lines: Vec<(&str, &serde_json::Value)> = Vec::new();
+    for key in ["smt_section", "audit_log_section", "metadata_columns_section"] {
+        if let Some(v) = r.manifest().raw().get(key) {
+            section_lines.push((key, v));
+        }
+    }
+    if !section_lines.is_empty() {
+        println!("on_disk_sections:    {}", section_lines.len());
+        for (key, v) in &section_lines {
+            let off = v.get("offset").and_then(|x| x.as_u64()).unwrap_or(0);
+            let size = v.get("size").and_then(|x| x.as_u64()).unwrap_or(0);
+            println!("  - {key}: offset={off} size={size}");
+        }
+    }
+
+    // Audit-log signing pubkey (PR 10) when present.
+    if let Some(audit) = r.manifest().raw().get("audit_log") {
+        if let Some(pk) = audit.get("writer_public_key").and_then(|v| v.as_str()) {
+            println!("writer_public_key:   {pk}");
+        }
     }
     Ok(())
 }
@@ -100,10 +124,12 @@ fn convert_jsonl(args: &[&str]) -> Result<(), String> {
     let dst = args[1];
 
     // Parse optional flags. Supports both `--flag value` (two args) and
-    // `--flag=value` (single arg with `=`).
+    // `--flag=value` (single arg with `=`); `--bool-flag` is a boolean
+    // toggle with no value.
     let mut text_field = "text".to_string();
     let mut tokenizer_id = ByteLevelTokenizer::ID.to_string();
     let mut vocab_size: u32 = 0;
+    let mut binary_sections = false;
     let mut i = 2;
     while i < args.len() {
         let raw = args[i];
@@ -136,6 +162,16 @@ fn convert_jsonl(args: &[&str]) -> Result<(), String> {
                     .map_err(|_| "invalid --vocab".to_string())?;
                 i += advance;
             }
+            "--binary-sections" => {
+                // Boolean toggle — no value to consume
+                if inline_value.is_some() {
+                    return Err(
+                        "--binary-sections is a boolean flag; don't pass `=value`".into(),
+                    );
+                }
+                binary_sections = true;
+                i += 1;
+            }
             other => return Err(format!("convert jsonl: unknown flag {other:?}")),
         }
     }
@@ -143,6 +179,9 @@ fn convert_jsonl(args: &[&str]) -> Result<(), String> {
     let f = File::open(src).map_err(|e| format!("open {src}: {e}"))?;
     let reader = BufReader::new(f);
     let mut w = Writer::create(dst, None);
+    if binary_sections {
+        w.enable_binary_sections();
+    }
     let mut count: u64 = 0;
     for (lineno, line) in reader.lines().enumerate() {
         let line = line.map_err(|e| format!("read line {}: {}", lineno + 1, e))?;

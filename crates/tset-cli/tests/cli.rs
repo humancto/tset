@@ -59,6 +59,33 @@ fn verify_missing_file_returns_nonzero() {
 }
 
 #[test]
+fn convert_with_binary_sections_emits_on_disk_sections() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("in.jsonl");
+    let dst = dir.path().join("sec.tset");
+    std::fs::write(&src, "{\"text\": \"alpha\"}\n{\"text\": \"beta\"}\n").unwrap();
+    let out = cli()
+        .args(["convert", "jsonl"])
+        .arg(&src)
+        .arg(&dst)
+        .arg("--binary-sections")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "convert failed: {out:?}");
+
+    // Inspect should now report on_disk_sections
+    let inspect = cli().arg("inspect").arg(&dst).output().unwrap();
+    let s = String::from_utf8_lossy(&inspect.stdout);
+    assert!(
+        s.contains("on_disk_sections:    3"),
+        "inspect did not report 3 on-disk sections; got:\n{s}"
+    );
+    assert!(s.contains("smt_section"));
+    assert!(s.contains("audit_log_section"));
+    assert!(s.contains("metadata_columns_section"));
+}
+
+#[test]
 fn convert_supports_inline_flag_equals_value() {
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("in.jsonl");
