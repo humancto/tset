@@ -4,48 +4,47 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark light" />
-  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#07080d" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#fafbfd" media="(prefers-color-scheme: light)" />
 
-  <title>TSET — verifiable, reusable, composable training data for LLMs</title>
-  <meta name="description" content="TSET is an open binary format for LLM training data: store text once, tokenize many ways, prove every token, honor every exclusion. Rust core + Python bindings. v0.3.2." />
+  <title>TSET — the receipts layer for LLM training data</title>
+  <meta name="description" content="One binary file format that records what your model trained on, what was excluded, and every tokenization that came out of it — bound to a single Merkle root you can publish. Open source, MIT, Rust core + Python bindings." />
   <link rel="canonical" href="https://humancto.github.io/tset/" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="TSET" />
-  <meta property="og:title" content="TSET — verifiable, reusable, composable training data for LLMs" />
-  <meta property="og:description" content="An open binary format for LLM training data: store text once, tokenize many ways, prove every token, honor every exclusion. Rust core + Python bindings." />
+  <meta property="og:title" content="TSET — the receipts layer for LLM training data" />
+  <meta property="og:description" content="Prove what your model trained on. Prove what it didn't. One open binary format with Merkle commitments, signed audit logs, and a deletion overlay every conforming reader honors." />
   <meta property="og:url" content="https://humancto.github.io/tset/" />
   <meta property="og:image" content="https://humancto.github.io/tset/assets/og-image.png" />
   <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="TSET — open binary format for LLM training data" />
+  <meta property="og:image:alt" content="TSET — the receipts layer for LLM training data" />
   <meta property="og:locale" content="en_US" />
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="TSET — verifiable, reusable, composable training data for LLMs" />
-  <meta name="twitter:description" content="Open binary format for LLM training data with provenance, multi-tokenizer views, Merkle commitments, and compliance proofs." />
+  <meta name="twitter:title" content="TSET — the receipts layer for LLM training data" />
+  <meta name="twitter:description" content="One binary file format. Provable inclusion. Provable exclusion. Signed audit log. Open source under MIT." />
   <meta name="twitter:image" content="https://humancto.github.io/tset/assets/og-image.png" />
-  <meta name="twitter:image:alt" content="TSET — open binary format for LLM training data" />
+  <meta name="twitter:image:alt" content="TSET — the receipts layer for LLM training data" />
 
   <!-- Geo metadata + geohash -->
-  <meta name="geo.region" content="US" />
+  <meta name="geo.region" content="US-CA" />
   <meta name="geo.placename" content="San Francisco, California" />
   <meta name="geo.position" content="37.7749;-122.4194" />
   <meta name="ICBM" content="37.7749, -122.4194" />
-  <!-- Geohash for 37.7749, -122.4194 (level 9) -->
   <meta name="geohash" content="9q8yyk8ytp" />
 
-  <!-- App / search hints -->
+  <!-- Search hints -->
   <meta name="application-name" content="TSET" />
-  <meta name="keywords" content="LLM training data, dataset format, tokenizer, provenance, Merkle tree, content addressing, GDPR, compliance, AI Act, Rust, Python, BLAKE3, sparse merkle tree, training data lineage, dataset reproducibility, audit log, Ed25519" />
+  <meta name="keywords" content="LLM training data, AI compliance, training data provenance, EU AI Act, GDPR Article 17, dataset audit, Merkle tree, BLAKE3, Sparse Merkle Tree, Ed25519, training data lineage, dataset reproducibility, tokenizer cache, dataset format, content addressing" />
   <meta name="author" content="TSET maintainers" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
 
-  <!-- JSON-LD structured data -->
+  <!-- JSON-LD -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -54,12 +53,12 @@
         "@type": "SoftwareSourceCode",
         "name": "TSET",
         "alternateName": "Tokenized Set",
-        "description": "An open binary format for LLM training data — verifiable, reusable, composable. Rust core, Python bindings, conformance suite.",
+        "description": "An open binary format for LLM training data — the receipts layer. Records what every model saw, every tokenization that came out of it, every document that was excluded. Bound to a single Merkle root.",
         "codeRepository": "https://github.com/humancto/tset",
         "programmingLanguage": ["Rust", "Python"],
         "license": "https://opensource.org/licenses/MIT",
         "url": "https://humancto.github.io/tset/",
-        "keywords": ["LLM", "training data", "dataset", "Merkle tree", "BLAKE3", "tokenizer", "provenance", "compliance"],
+        "keywords": ["LLM", "training data", "compliance", "Merkle tree", "BLAKE3", "tokenizer", "provenance", "GDPR", "EU AI Act"],
         "version": "0.3.2"
       },
       {
@@ -67,27 +66,18 @@
         "name": "TSET",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Linux, macOS, Windows",
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        },
-        "url": "https://humancto.github.io/tset/",
-        "aggregateRating": {
-          "@type": "AggregateRating",
-          "ratingValue": "5",
-          "ratingCount": "1",
-          "bestRating": "5"
-        }
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "url": "https://humancto.github.io/tset/"
       }
     ]
   }
   </script>
 
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="alternate icon" href="assets/favicon.svg" />
-
   <link rel="apple-touch-icon" href="assets/favicon-192.png" />
+  <link rel="preconnect" href="https://rsms.me" crossorigin />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
@@ -98,196 +88,487 @@
   <div class="wrap">
     <a class="brand" href="#">
       <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
-        <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#g)"/>
-        <path d="M8 11h16M16 11v13" stroke="#0b0d12" stroke-width="2.5" stroke-linecap="round"/>
-        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#a78bfa"/>
+        <rect x="2" y="2" width="28" height="28" rx="7" fill="url(#brandG)"/>
+        <path d="M8.5 11.5h15M16 11.5v13" stroke="#0a0c14" stroke-width="2.6" stroke-linecap="round"/>
+        <defs><linearGradient id="brandG" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#67e8f9"/>
         </linearGradient></defs>
       </svg>
       <span>TSET</span>
       <span class="ver">v0.3.2</span>
     </a>
     <nav>
-      <a href="#what">What</a>
+      <a href="#why">Why</a>
       <a href="#how">How</a>
       <a href="#code">Code</a>
       <a href="#status">Status</a>
-      <a href="https://github.com/humancto/tset" rel="noopener">GitHub →</a>
+      <a class="gh" href="https://github.com/humancto/tset" rel="noopener">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        <span>GitHub</span>
+      </a>
     </nav>
   </div>
 </header>
 
 <main id="main">
 
-  <!-- HERO -->
-  <section class="hero">
-    <div class="wrap">
-      <div class="badge" aria-label="Build status">
-        <span class="dot"></span> 24 of 24 production-grade items closed
-      </div>
-      <h1>
-        Training data <span class="grad">your model can prove</span> it actually saw.
-      </h1>
+<!-- ════════════════════════════ HERO ════════════════════════════ -->
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <span class="pill"><span class="tag">v0.3.2</span> 24 of 24 production-grade items closed <span class="arr">→</span></span>
+      <h1>The <span class="grad">receipts layer</span> for LLM training data.</h1>
       <p class="sub">
-        TSET is an open binary format for LLM training corpora. Store text once,
-        tokenize many ways, bind the whole shard with a Merkle root, and honor
-        deletion requests across every conforming reader.
+        One open binary format that records what every model saw, what was
+        excluded, and every tokenization that came out of it &mdash; bound to a
+        single Merkle root you can publish.
       </p>
       <div class="cta">
-        <a class="btn primary" href="#code">Get started</a>
-        <a class="btn ghost" href="https://github.com/humancto/tset" rel="noopener">View on GitHub</a>
+        <a class="btn primary" href="#code">Get started <span class="arrow">→</span></a>
+        <a class="btn ghost" href="https://github.com/humancto/tset" rel="noopener">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+          View on GitHub
+        </a>
       </div>
-      <div class="meta-row">
-        <span><strong>BLAKE3</strong> content addressing</span>
-        <span><strong>Sparse Merkle</strong> proofs</span>
-        <span><strong>Ed25519</strong> signed audit log</span>
-        <span><strong>Rust core</strong> + Python bindings</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- WHY -->
-  <section id="what" class="section">
-    <div class="wrap">
-      <h2>Why a new format?</h2>
-      <p class="lede">
-        Training pipelines today juggle JSONL, Parquet, WebDataset, MDS, and a
-        dozen tokenizer caches — each with its own mental model for provenance.
-        TSET is one binary. One Merkle root. One source of truth for what every
-        token came from.
-      </p>
-      <div class="grid four">
-        <article class="card">
-          <h3>One copy of the text</h3>
-          <p>Documents are stored once, content-addressed by BLAKE3. New tokenizations are appended in place — no re-shuffling raw bytes.</p>
-        </article>
-        <article class="card">
-          <h3>Provenance you can prove</h3>
-          <p>Inclusion <em>and</em> non-inclusion proofs against a fixed-depth Sparse Merkle Tree. Every chunk carries its own content hash.</p>
-        </article>
-        <article class="card">
-          <h3>Compliance-shaped</h3>
-          <p>An exclusion overlay (binding into the dataset Merkle root) is honored by every conforming reader. The audit log is Ed25519-signed.</p>
-        </article>
-        <article class="card">
-          <h3>Reproducible by construction</h3>
-          <p>Re-tokenizing the same shard on the same code yields byte-identical chunks. Cross-impl conformance fixtures lock the wire format.</p>
-        </article>
+      <div class="trust">
+        <span><span class="dot"></span> MIT licensed</span>
+        <span>BLAKE3 content addressing</span>
+        <span>Ed25519 signed audit log</span>
+        <span>Rust core &middot; Python bindings</span>
       </div>
     </div>
-  </section>
 
-  <!-- HOW -->
-  <section id="how" class="section alt">
-    <div class="wrap">
-      <h2>How it&rsquo;s laid out</h2>
-      <p class="lede">
-        A TSET shard is a self-describing binary file. The header anchors a
-        Merkle root over the document store and every tokenization view; the
-        manifest at the tail is content-hashed back into the header.
-      </p>
+    <!-- Merkle tree motif -->
+    <div class="motif" aria-hidden="true">
+      <svg viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="rootFill" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#a78bfa" stop-opacity=".95"/>
+            <stop offset="1" stop-color="#7c3aed" stop-opacity=".7"/>
+          </radialGradient>
+          <radialGradient id="rootGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#a78bfa" stop-opacity=".7"/>
+            <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
 
-      <pre class="diagram"><code>┌─ MAGIC + version_minor ──────────────────────────────┐
-│  shard_merkle_root  ·  manifest_hash                 │
-├─ DOC STORE ──────────────────────────────────────────┤
-│  zstd-compressed blocks · per-doc BLAKE3 addressed   │
-├─ TOKENIZER VIEWS (one per view) ─────────────────────┤
-│  bit-packed token IDs · per-chunk content_hash       │
-├─ OPTIONAL on-disk sections (v0.3.2) ─────────────────┤
-│  TSMT  Sparse Merkle Tree                            │
-│  TLOG  Append-only audit log (Ed25519 signed)        │
-│  TCOL  Columnar metadata index                       │
-├─ MANIFEST (canonical JSON) ──────────────────────────┤
-│  document index · views · subsets · weights          │
-└─ FOOTER (mirrors header for tail-first verify) ──────┘</code></pre>
+        <!-- Edges (drawn first so they sit beneath the nodes) -->
+        <g class="edges">
+          <!-- root -> level 1 -->
+          <path class="edge" d="M240 90 L130 200"/>
+          <path class="edge" d="M240 90 L350 200"/>
+          <!-- level 1 -> level 2 -->
+          <path class="edge" d="M130 220 L70 330"/>
+          <path class="edge" d="M130 220 L190 330"/>
+          <path class="edge" d="M350 220 L290 330"/>
+          <path class="edge" d="M350 220 L410 330"/>
+          <!-- level 2 -> leaves -->
+          <path class="edge" d="M70 350 L40 440"/>
+          <path class="edge" d="M70 350 L100 440"/>
+          <path class="edge" d="M190 350 L160 440"/>
+          <path class="edge" d="M190 350 L220 440"/>
+          <path class="edge" d="M290 350 L260 440"/>
+          <path class="edge" d="M290 350 L320 440"/>
+          <path class="edge" d="M410 350 L380 440"/>
+          <path class="edge" d="M410 350 L440 440"/>
+        </g>
 
-      <div class="grid three">
-        <article class="card num"><span>01</span><h3>Write once</h3><p>The Writer streams documents to disk &mdash; no in-memory <code>doc_contents</code> pile-up.</p></article>
-        <article class="card num"><span>02</span><h3>Tokenize many ways</h3><p><code>append_tokenizer_view</code> bolts a new view onto an existing shard without rewriting the document store.</p></article>
-        <article class="card num"><span>03</span><h3>Verify everywhere</h3><p>Reader::open eagerly checks every section content-hash. Tampered bytes fail loudly at open.</p></article>
+        <!-- Animated flow lines that travel up to the root -->
+        <g>
+          <path class="flow"    d="M40 440 Q80 350 130 210 Q200 130 240 90"/>
+          <path class="flow f2" d="M220 440 Q190 350 130 210 Q200 130 240 90"/>
+          <path class="flow f3" d="M380 440 Q400 350 350 210 Q300 130 240 90"/>
+        </g>
+
+        <!-- Leaves (8 documents) -->
+        <g>
+          <circle class="node leaf" cx="40"  cy="440" r="14"/>
+          <circle class="node leaf" cx="100" cy="440" r="14"/>
+          <circle class="node leaf" cx="160" cy="440" r="14"/>
+          <circle class="node leaf" cx="220" cy="440" r="14"/>
+          <circle class="node leaf" cx="260" cy="440" r="14"/>
+          <circle class="node leaf" cx="320" cy="440" r="14"/>
+          <circle class="node leaf" cx="380" cy="440" r="14"/>
+          <circle class="node leaf" cx="440" cy="440" r="14"/>
+
+          <text class="hash" x="22"  y="473">9c4f…</text>
+          <text class="hash" x="82"  y="473">2e1a…</text>
+          <text class="hash" x="142" y="473">d8b3…</text>
+          <text class="hash" x="202" y="473">71f0…</text>
+          <text class="hash" x="242" y="473">a55d…</text>
+          <text class="hash" x="302" y="473">ff21…</text>
+          <text class="hash" x="362" y="473">3e9c…</text>
+          <text class="hash" x="422" y="473">00ab…</text>
+        </g>
+
+        <!-- Inner nodes -->
+        <g>
+          <circle class="node inner" cx="70"  cy="340" r="18"/>
+          <circle class="node inner" cx="190" cy="340" r="18"/>
+          <circle class="node inner" cx="290" cy="340" r="18"/>
+          <circle class="node inner" cx="410" cy="340" r="18"/>
+          <circle class="node inner" cx="130" cy="210" r="22"/>
+          <circle class="node inner" cx="350" cy="210" r="22"/>
+        </g>
+
+        <!-- Root -->
+        <circle class="glow pulse-ring" cx="240" cy="80" r="60" fill="url(#rootGlow)"/>
+        <circle class="node root" cx="240" cy="80" r="32"/>
+        <text class="root-label" x="200" y="84">ROOT</text>
+        <text class="hash" x="194" y="32">shard_merkle_root</text>
+
+        <!-- Section labels -->
+        <text class="label" x="20"  y="400">documents</text>
+        <text class="label" x="60"  y="300">chunk hashes</text>
+        <text class="label" x="280" y="300">chunk hashes</text>
+        <text class="label" x="80"  y="170">subtree</text>
+        <text class="label" x="306" y="170">subtree</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════ WHY ════════════════════════════ -->
+<section id="why" class="section problem">
+  <div class="wrap">
+    <p class="eyebrow">Why now</p>
+    <h2>Tribal-knowledge provenance is breaking.</h2>
+    <p class="lede">
+      Three forces are converging on every team that trains a model: regulators
+      who want defensible answers, users who can demand deletion, and
+      researchers who want to reproduce results. Today's training pipelines
+      can't answer any of them cleanly.
+    </p>
+
+    <div class="grid-3">
+      <div class="item">
+        <div class="num">01 — Regulation</div>
+        <h3>The EU AI Act lands hard.</h3>
+        <p>
+          Article 10 (data governance) and Article 53 (foundation-model
+          obligations) require detailed records of training-data sources and
+          characteristics. Vague S3 paths and Notion docs won't satisfy an
+          auditor.
+        </p>
+      </div>
+      <div class="item">
+        <div class="num">02 — Right to erasure</div>
+        <h3>GDPR Art. 17 is now operational.</h3>
+        <p>
+          Users are filing right-to-be-forgotten requests against AI
+          companies. You need a way to prove a document was excluded from a
+          retraining run &mdash; cryptographically, not on a spreadsheet.
+        </p>
+      </div>
+      <div class="item">
+        <div class="num">03 — Reproducibility</div>
+        <h3>"What did we train on?" is a real question.</h3>
+        <p>
+          Re-running a training job a year later, debugging a regression, or
+          handing your corpus to an external auditor all require pinning the
+          exact bytes. JSONL files in S3 mutate. Merkle roots don't.
+        </p>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- CODE -->
-  <section id="code" class="section">
-    <div class="wrap">
-      <h2>Show me the code</h2>
+<!-- ════════════════════════════ BENTO ════════════════════════════ -->
+<section class="section">
+  <div class="wrap">
+    <p class="eyebrow">What's in the file</p>
+    <h2>Receipts, in six shapes.</h2>
+    <p class="lede">
+      Every claim TSET makes is backed by a section of the binary you can
+      verify with one of the open implementations. Nothing is on faith.
+    </p>
 
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="true" data-tab="cli">CLI</button>
-        <button role="tab" aria-selected="false" data-tab="py">Python</button>
-        <button role="tab" aria-selected="false" data-tab="rs">Rust</button>
+    <div class="bento">
+      <div class="b feat b-wide b-tall">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.5 0 4.76 1.02 6.4 2.66"/>
+          </svg>
+        </div>
+        <span class="tag">Provable inclusion</span>
+        <h3>"Yes, this document was in the training set."</h3>
+        <p>
+          A Sparse Merkle Tree commits to every doc hash. Inclusion proofs are
+          O(log&nbsp;N) and verifiable against the single root in the file
+          header. Hand the proof to your auditor; they can verify it without
+          our code.
+        </p>
       </div>
 
-      <pre class="code" data-pane="cli"><code><span class="c"># Convert a JSONL corpus to TSET, with on-disk binary sections</span>
-$ tset convert jsonl input.jsonl out.tset --binary-sections
+      <div class="b feat-cyan b-wide">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/>
+          </svg>
+        </div>
+        <span class="tag">Provable non-inclusion</span>
+        <h3>"No, this document was excluded."</h3>
+        <p>
+          Same SMT structure gives you cryptographic proofs of <em>absence</em>
+          &mdash; the missing primitive most pipelines lack. Maps directly onto
+          GDPR Art. 17 deletion requests.
+        </p>
+      </div>
 
-<span class="c"># Inspect the shard (header, manifest, signing pubkey, sections)</span>
-$ tset inspect out.tset
+      <div class="b feat b-third">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12h18M3 6h18M3 18h18"/>
+          </svg>
+        </div>
+        <span class="tag">Append-only audit</span>
+        <h3>Every action is signed.</h3>
+        <p>Ed25519-signed log of every ingest, exclusion, and tokenizer view added.</p>
+      </div>
 
-<span class="c"># Full integrity check: manifest hash, footer, Merkle root,</span>
-<span class="c"># audit log signature, per-view reproducibility</span>
-$ tset verify out.tset</code></pre>
+      <div class="b feat-cyan b-third">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+          </svg>
+        </div>
+        <span class="tag">Tokenize many ways</span>
+        <h3>Append a view, never re-shuffle.</h3>
+        <p>One copy of the text. Add a new tokenization in place; old views stay valid.</p>
+      </div>
 
-      <pre class="code hidden" data-pane="py"><code><span class="k">from</span> tset <span class="k">import</span> Reader, Writer
-<span class="k">from</span> tset.tokenizers <span class="k">import</span> ByteLevelTokenizer, WhitespaceTokenizer
-
-<span class="k">with</span> Writer(<span class="s">"corpus.tset"</span>) <span class="k">as</span> w:
-    w.add_document(<span class="s">b"alpha document"</span>, metadata={<span class="s">"lang"</span>: <span class="s">"en"</span>})
-    w.add_document(<span class="s">b"beta"</span>, metadata={<span class="s">"lang"</span>: <span class="s">"fr"</span>})
-    w.add_subset(<span class="s">"english"</span>, <span class="s">"lang = 'en'"</span>, default_weight=<span class="n">0.7</span>)
-    w.add_tokenizer_view(ByteLevelTokenizer())
-    w.enable_binary_sections()  <span class="c"># opt-in v0.3.2 on-disk TSMT/TLOG/TCOL</span>
-
-r = Reader(<span class="s">"corpus.tset"</span>)
-<span class="k">for</span> tokens, doc_hash <span class="k">in</span> r.stream_tokens(<span class="s">"byte-level-v1"</span>, batch_size=<span class="n">1024</span>):
-    train_step(tokens)  <span class="c"># numpy uint32 batch + the source doc_hash</span></code></pre>
-
-      <pre class="code hidden" data-pane="rs"><code><span class="k">use</span> tset_core::{Reader, Writer};
-<span class="k">use</span> tset_core::tokenizers::ByteLevelTokenizer;
-
-<span class="k">let mut</span> w = Writer::create(<span class="s">"corpus.tset"</span>, <span class="k">None</span>);
-w.enable_binary_sections();
-w.add_document(<span class="s">b"alpha document"</span>)?;
-w.add_tokenizer_view(<span class="k">Box</span>::new(ByteLevelTokenizer))?;
-w.close()?;
-
-<span class="k">let</span> r = Reader::open(<span class="s">"corpus.tset"</span>)?;
-<span class="k">let</span> view = r.open_view(<span class="s">"byte-level-v1"</span>)?;
-<span class="k">for</span> (tokens, doc_hash) <span class="k">in</span> view.iter_per_doc()? {
-    <span class="c">// tokens: Vec&lt;u32&gt;, doc_hash: [u8; 32]</span>
-}</code></pre>
+      <div class="b b-third">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h10"/>
+          </svg>
+        </div>
+        <span class="tag">Reproducible</span>
+        <h3>Byte-identical re-tokenization.</h3>
+        <p>Cross-impl conformance fixtures lock the wire format. Byte-for-byte.</p>
+      </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- STATUS -->
-  <section id="status" class="section alt">
-    <div class="wrap">
-      <h2>What ships in v0.3.2</h2>
-      <table class="status">
-        <thead><tr><th>Surface</th><th>Status</th></tr></thead>
-        <tbody>
-          <tr><td>RFC</td><td>v0.4 — public review</td></tr>
-          <tr><td>Binary spec</td><td>v0.3.2 (frozen body; v0.4 sections in queue)</td></tr>
-          <tr><td>Rust core (<code>tset-core</code>)</td><td>Reader · Writer · Dataset · ObjectStore · 39 unit + 9 integration tests</td></tr>
-          <tr><td>Python (<code>tset</code>)</td><td>Reference impl · 145 tests · auto-delegates hot paths to <code>tset_rs</code></td></tr>
-          <tr><td>PyO3 binding (<code>tset_rs</code>)</td><td>Reader · Writer · Dataset · DatasetWriter · on-disk section accessors</td></tr>
-          <tr><td>CLI (<code>tset</code>)</td><td><code>inspect</code> · <code>verify</code> · <code>convert jsonl --binary-sections</code></td></tr>
-          <tr><td>Provenance proofs</td><td>SMT inclusion + non-inclusion + dataset-overlay binding</td></tr>
-          <tr><td>Audit log</td><td>Ed25519-signed (additive optional, downgrade-attack rejected)</td></tr>
-          <tr><td>Conformance</td><td>v0.1, v0.3, v0.3.2 fixtures locked &mdash; both readers cross-verified</td></tr>
-          <tr><td>Lint</td><td><code>cargo clippy --all-targets</code> &mdash; zero warnings</td></tr>
-          <tr><td>License</td><td>MIT</td></tr>
-        </tbody>
-      </table>
+<!-- ════════════════════════════ HOW (file layout) ════════════════════════════ -->
+<section id="how" class="section">
+  <div class="wrap">
+    <p class="eyebrow">How it&rsquo;s laid out</p>
+    <h2>One self-describing binary file.</h2>
+    <p class="lede">
+      A header anchors a Merkle root over the document store and every
+      tokenization view. Optional v0.3.2 sections (TSMT / TLOG / TCOL) live
+      on disk, eagerly verified at <code>Reader::open</code>. The manifest at
+      the tail is content-hashed back into the header.
+    </p>
+
+    <div class="layout">
+      <svg viewBox="0 0 920 420" xmlns="http://www.w3.org/2000/svg">
+        <!-- HEADER -->
+        <rect class="seg-rect section-hdr" x="0"   y="0"  width="920" height="56" rx="10"/>
+        <text class="seg-tag hdr"   x="20" y="22">HEADER</text>
+        <text class="seg-title"     x="20" y="44">MAGIC · version_minor · shard_merkle_root · manifest_hash</text>
+
+        <!-- DOC STORE -->
+        <rect class="seg-rect" x="0" y="68"  width="920" height="56" rx="10"/>
+        <text class="seg-tag" x="20" y="90" fill="#fbbf24">DOC STORE</text>
+        <text class="seg-title" x="20" y="112">zstd-compressed blocks · per-doc BLAKE3 addressed</text>
+
+        <!-- TOKENIZER VIEWS -->
+        <rect class="seg-rect" x="0"   y="136" width="455" height="56" rx="10"/>
+        <text class="seg-tag" x="20" y="158" fill="#fbbf24">VIEW · byte-level-v1</text>
+        <text class="seg-title" x="20" y="180">bit-packed token IDs · per-chunk content_hash</text>
+
+        <rect class="seg-rect" x="465" y="136" width="455" height="56" rx="10"/>
+        <text class="seg-tag" x="485" y="158" fill="#fbbf24">VIEW · whitespace-hashed-v1</text>
+        <text class="seg-title" x="485" y="180">bit-packed token IDs · per-chunk content_hash</text>
+
+        <!-- TSMT -->
+        <rect class="seg-rect section-tsmt" x="0"   y="204" width="300" height="68" rx="10"/>
+        <text class="seg-tag tsmt" x="20" y="226">TSMT</text>
+        <text class="seg-title"    x="20" y="248">Sparse Merkle Tree</text>
+        <text class="seg-sub"      x="20" y="264">inclusion + non-inclusion proofs</text>
+
+        <!-- TLOG -->
+        <rect class="seg-rect section-tlog" x="310" y="204" width="300" height="68" rx="10"/>
+        <text class="seg-tag tlog" x="330" y="226">TLOG</text>
+        <text class="seg-title"    x="330" y="248">Append-only audit log</text>
+        <text class="seg-sub"      x="330" y="264">Ed25519 signed</text>
+
+        <!-- TCOL -->
+        <rect class="seg-rect section-tcol" x="620" y="204" width="300" height="68" rx="10"/>
+        <text class="seg-tag tcol" x="640" y="226">TCOL</text>
+        <text class="seg-title"    x="640" y="248">Columnar metadata index</text>
+        <text class="seg-sub"      x="640" y="264">subset queries, weights</text>
+
+        <!-- MANIFEST -->
+        <rect class="seg-rect" x="0" y="284" width="920" height="56" rx="10"/>
+        <text class="seg-tag" x="20" y="306" fill="#fbbf24">MANIFEST</text>
+        <text class="seg-title" x="20" y="328">canonical JSON · document index · views · subsets · weights</text>
+
+        <!-- FOOTER -->
+        <rect class="seg-rect section-hdr" x="0" y="352" width="920" height="56" rx="10"/>
+        <text class="seg-tag hdr" x="20" y="374">FOOTER</text>
+        <text class="seg-title"   x="20" y="396">mirrors header for tail-first verification</text>
+
+        <!-- Hash binding arrow -->
+        <path class="arrow-line" d="M880 312 C 905 312 905 28 880 28"/>
+        <text class="arrow-label" x="780" y="180" transform="rotate(90 780 180)">manifest_hash binds tail → header</text>
+      </svg>
+
+      <div class="legend">
+        <span><i class="hdr"></i> header / footer (tail-first verifiable)</span>
+        <span><i class="tsmt"></i> TSMT — Sparse Merkle Tree (v0.3.2)</span>
+        <span><i class="tlog"></i> TLOG — signed audit log (v0.3.2)</span>
+        <span><i class="tcol"></i> TCOL — columnar index (v0.3.2)</span>
+      </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- HONESTY -->
-  <section class="section">
-    <div class="wrap narrow">
-      <h2>What this format is <em>not</em></h2>
+<!-- ════════════════════════════ CODE ════════════════════════════ -->
+<section id="code" class="section">
+  <div class="wrap">
+    <p class="eyebrow">Quickstart</p>
+    <h2>Three commands. Real receipts.</h2>
+    <p class="lede">
+      The Rust core, Python bindings, and CLI all read and write the same
+      binary. Pick the surface you like; the wire format is locked.
+    </p>
+
+    <div class="code-card">
+      <div class="code-tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="cli">
+          <svg class="lang-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>
+          </svg>
+          CLI
+        </button>
+        <button role="tab" aria-selected="false" data-tab="py">
+          <svg class="lang-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 2a4 4 0 014 4v3H8V8a4 4 0 014-4z"/><path d="M12 22a4 4 0 01-4-4v-3h8v1a4 4 0 01-4 4z"/>
+          </svg>
+          Python
+        </button>
+        <button role="tab" aria-selected="false" data-tab="rs">
+          <svg class="lang-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/><path d="M9 8v8M9 12h3a2 2 0 010 4H9"/>
+          </svg>
+          Rust
+        </button>
+      </div>
+
+      <div class="code-pane active" data-pane="cli">
+<pre><code><span class="tok-c"># Convert a JSONL corpus to TSET, with on-disk binary sections (TSMT / TLOG / TCOL)</span>
+<span class="tok-p">$</span> tset convert jsonl input.jsonl out.tset <span class="tok-pun">--binary-sections</span>
+
+<span class="tok-c"># Inspect: header, manifest, signing pubkey, sections present</span>
+<span class="tok-p">$</span> tset inspect out.tset
+
+<span class="tok-c"># Full integrity check: manifest hash, footer, Merkle root,</span>
+<span class="tok-c"># audit-log signature, per-view re-tokenization byte-equality</span>
+<span class="tok-p">$</span> tset verify out.tset
+<span class="tok-s">  ✓ header magic + version</span>
+<span class="tok-s">  ✓ manifest_hash matches</span>
+<span class="tok-s">  ✓ shard_merkle_root  9c4f2e1a…d8b371f0</span>
+<span class="tok-s">  ✓ TLOG signature (Ed25519, key ed25519:a55d…)</span>
+<span class="tok-s">  ✓ 2 views verified, 1,247 chunks reproduced byte-identically</span></code></pre>
+      </div>
+
+      <div class="code-pane" data-pane="py">
+<pre><code><span class="tok-k">from</span> tset <span class="tok-k">import</span> Reader, Writer
+<span class="tok-k">from</span> tset.tokenizers <span class="tok-k">import</span> ByteLevelTokenizer, WhitespaceTokenizer
+
+<span class="tok-c"># Write once, append tokenizer views in place</span>
+<span class="tok-k">with</span> <span class="tok-fn">Writer</span>(<span class="tok-s">"corpus.tset"</span>) <span class="tok-k">as</span> w:
+    w.<span class="tok-fn">add_document</span>(<span class="tok-s">b"alpha document"</span>, metadata={<span class="tok-s">"lang"</span>: <span class="tok-s">"en"</span>})
+    w.<span class="tok-fn">add_document</span>(<span class="tok-s">b"beta"</span>,           metadata={<span class="tok-s">"lang"</span>: <span class="tok-s">"fr"</span>})
+    w.<span class="tok-fn">add_subset</span>(<span class="tok-s">"english"</span>, <span class="tok-s">"lang = 'en'"</span>, default_weight=<span class="tok-n">0.7</span>)
+    w.<span class="tok-fn">add_tokenizer_view</span>(<span class="tok-fn">ByteLevelTokenizer</span>())
+    w.<span class="tok-fn">enable_binary_sections</span>()  <span class="tok-c"># opt-in v0.3.2 on-disk TSMT/TLOG/TCOL</span>
+
+<span class="tok-c"># Stream tokens into a training step; doc_hash travels with every batch</span>
+r = <span class="tok-fn">Reader</span>(<span class="tok-s">"corpus.tset"</span>)
+<span class="tok-k">for</span> tokens, doc_hash <span class="tok-k">in</span> r.<span class="tok-fn">stream_tokens</span>(<span class="tok-s">"byte-level-v1"</span>, batch_size=<span class="tok-n">1024</span>):
+    <span class="tok-fn">train_step</span>(tokens)  <span class="tok-c"># numpy uint32 batch + the source doc_hash</span>
+
+<span class="tok-c"># Generate a non-inclusion proof for a deletion request</span>
+absent = <span class="tok-fn">bytes</span>.<span class="tok-fn">fromhex</span>(<span class="tok-s">"a55d" + "00" * 30</span>)
+proof  = r.<span class="tok-fn">prove_non_inclusion</span>(absent)
+<span class="tok-k">assert</span> proof.<span class="tok-fn">verify</span>(r.<span class="tok-fn">smt_root</span>())  <span class="tok-c"># True — root comes from the v0.3.2 TSMT section</span></code></pre>
+      </div>
+
+      <div class="code-pane" data-pane="rs">
+<pre><code><span class="tok-k">use</span> tset_core::{Reader, Writer, Dataset};
+<span class="tok-k">use</span> tset_core::tokenizers::ByteLevelTokenizer;
+
+<span class="tok-k">let mut</span> w = Writer::<span class="tok-fn">create</span>(<span class="tok-s">"corpus.tset"</span>, <span class="tok-k">None</span>);
+w.<span class="tok-fn">enable_binary_sections</span>();
+w.<span class="tok-fn">add_document</span>(<span class="tok-s">b"alpha document"</span>)?;
+w.<span class="tok-fn">add_tokenizer_view</span>(<span class="tok-ty">Box</span>::<span class="tok-fn">new</span>(ByteLevelTokenizer))?;
+w.<span class="tok-fn">close</span>()?;
+
+<span class="tok-k">let</span> r    = Reader::<span class="tok-fn">open</span>(<span class="tok-s">"corpus.tset"</span>)?;
+<span class="tok-k">let</span> view = r.<span class="tok-fn">open_view</span>(<span class="tok-s">"byte-level-v1"</span>)?;
+<span class="tok-k">for</span> (tokens, doc_hash) <span class="tok-k">in</span> view.<span class="tok-fn">iter_per_doc</span>()? {
+    <span class="tok-c">// tokens: Vec&lt;u32&gt;, doc_hash: [u8; 32]</span>
+    <span class="tok-fn">train_step</span>(&tokens, &doc_hash);
+}
+
+<span class="tok-k">let</span> root = r.<span class="tok-fn">smt_root</span>();  <span class="tok-c">// 32-byte SMT root from the TSMT section</span>
+
+<span class="tok-c">// Dataset-level non-inclusion proof (RTBF receipt)</span>
+<span class="tok-k">let</span> ds     = Dataset::<span class="tok-fn">open</span>(<span class="tok-s">"my-corpus.tset/"</span>)?;
+<span class="tok-k">let</span> absent: [<span class="tok-ty">u8</span>; <span class="tok-n">32</span>] = [<span class="tok-n">0xa5</span>; <span class="tok-n">32</span>];
+<span class="tok-k">let</span> bundle = ds.<span class="tok-fn">prove_non_inclusion</span>(&absent)?;  <span class="tok-c">// serde_json::Value proof bundle</span></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════ STATUS ════════════════════════════ -->
+<section id="status" class="section">
+  <div class="wrap">
+    <p class="eyebrow">Status</p>
+    <h2>Production-grade. Open under MIT.</h2>
+    <p class="lede">
+      The format body is frozen at v0.3.2. v0.4 promotes the optional on-disk
+      sections to mandatory. Two implementations are kept in lockstep by a
+      cross-impl conformance suite.
+    </p>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="v"><span class="accent">24</span>/24</div>
+        <div class="l">Production-grade roadmap items closed.</div>
+      </div>
+      <div class="stat-card">
+        <div class="v">187</div>
+        <div class="l">Tests across the Rust core (42) and Python reference (145).</div>
+      </div>
+      <div class="stat-card">
+        <div class="v">3</div>
+        <div class="l">Conformance fixtures locked: v0.1, v0.3, v0.3.2.</div>
+      </div>
+      <div class="stat-card">
+        <div class="v">0</div>
+        <div class="l">Clippy warnings. <code>cargo fmt --check</code> clean.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════ HONESTY ════════════════════════════ -->
+<section class="section honesty">
+  <div class="wrap narrow">
+    <p class="eyebrow">No magic, no overclaiming</p>
+    <h2>What this format is <em>not</em>.</h2>
+    <div class="box">
       <p>
         TSET makes <strong>integrity</strong> claims, not <strong>authenticity</strong>
         ones. It does not prove a document came from the URL recorded in
@@ -297,51 +578,96 @@ w.close()?;
         Whether your particular use satisfies GDPR Art. 17, the EU AI Act, or
         any other regulation is for your counsel to determine.
       </p>
-      <p>See <a href="https://github.com/humancto/tset/blob/main/RFC.md#57-what-tset-is-not">RFC §5.7</a> for the long version.</p>
+      <p style="margin-top:14px;margin-bottom:0;">
+        See <a href="https://github.com/humancto/tset/blob/main/RFC.md#57-what-tset-is-not" style="color:var(--cyan);">RFC §5.7</a> for the long version.
+      </p>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- CTA FOOTER -->
-  <section class="section cta-band">
-    <div class="wrap narrow center">
-      <h2>Ship a shard today.</h2>
-      <p>The Rust core and Python bindings are on GitHub under MIT. The conformance fixtures lock the wire format. Open an issue before you build on top.</p>
-      <div class="cta center">
-        <a class="btn primary" href="https://github.com/humancto/tset" rel="noopener">Star on GitHub</a>
-        <a class="btn ghost" href="https://github.com/humancto/tset/blob/main/SPEC.md" rel="noopener">Read the spec</a>
-      </div>
+<!-- ════════════════════════════ CTA ════════════════════════════ -->
+<section class="cta-band">
+  <div class="wrap narrow">
+    <h2>Ship a shard today.</h2>
+    <p class="lede" style="margin: 0 auto 8px;">
+      The Rust core, Python bindings, and CLI are on GitHub under MIT.
+      Conformance fixtures lock the wire format.
+    </p>
+    <div class="install">
+      <span class="p">$</span>
+      <span>pip install tset</span>
+      <button class="copy" data-copy="pip install tset" aria-label="Copy install command">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/>
+        </svg>
+      </button>
     </div>
-  </section>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/humancto/tset" rel="noopener">Star on GitHub <span class="arrow">→</span></a>
+      <a class="btn ghost" href="https://github.com/humancto/tset/blob/main/SPEC.md" rel="noopener">Read the spec</a>
+    </div>
+  </div>
+</section>
 
 </main>
 
 <footer class="foot">
   <div class="wrap">
-    <div>
-      <strong>TSET</strong> &middot; an open standard for LLM training data
-      <br/>
-      <small>MIT licensed &middot; v0.3.2 &middot; built in San Francisco</small>
+    <div class="meta">
+      <strong>TSET</strong> &middot; the receipts layer for LLM training data<br/>
+      MIT licensed &middot; v0.3.2 &middot; built in San Francisco
     </div>
     <div class="links">
       <a href="https://github.com/humancto/tset" rel="noopener">GitHub</a>
       <a href="https://github.com/humancto/tset/blob/main/RFC.md" rel="noopener">RFC</a>
       <a href="https://github.com/humancto/tset/blob/main/SPEC.md" rel="noopener">Spec</a>
       <a href="https://github.com/humancto/tset/blob/main/CHANGELOG.md" rel="noopener">Changelog</a>
+      <a href="https://github.com/humancto/tset/blob/main/ROADMAP.md" rel="noopener">Roadmap</a>
       <a href="https://github.com/humancto/tset/issues" rel="noopener">Issues</a>
     </div>
   </div>
 </footer>
 
 <script>
-(function () {
-  const tabs  = document.querySelectorAll('.tabs [role=tab]');
-  const panes = document.querySelectorAll('.code[data-pane]');
-  tabs.forEach(t => t.addEventListener('click', () => {
-    const k = t.dataset.tab;
-    tabs.forEach(x => x.setAttribute('aria-selected', x === t));
-    panes.forEach(p => p.classList.toggle('hidden', p.dataset.pane !== k));
-  }));
-})();
+  // Tabs
+  (function () {
+    const tabs  = document.querySelectorAll('.code-tabs [role=tab]');
+    const panes = document.querySelectorAll('.code-pane[data-pane]');
+    tabs.forEach(t => t.addEventListener('click', () => {
+      const k = t.dataset.tab;
+      tabs.forEach(x => x.setAttribute('aria-selected', x === t ? 'true' : 'false'));
+      panes.forEach(p => p.classList.toggle('active', p.dataset.pane === k));
+    }));
+  })();
+
+  // Copy install command
+  (function () {
+    document.querySelectorAll('.copy').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copy);
+          const orig = btn.innerHTML;
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+          setTimeout(() => btn.innerHTML = orig, 1400);
+        } catch (e) { /* noop */ }
+      });
+    });
+  })();
+
+  // Reveal-on-scroll
+  (function () {
+    document.querySelectorAll('.section, .hero .wrap > div, .bento .b, .stat-card').forEach(el => el.classList.add('reveal'));
+    if (!('IntersectionObserver' in window)) {
+      document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -10% 0px', threshold: 0.05 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  })();
 </script>
 
 </body>
