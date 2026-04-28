@@ -1,66 +1,144 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b0d12"/>
-      <stop offset="1" stop-color="#141822"/>
+      <stop offset="0" stop-color="#07080d"/>
+      <stop offset="1" stop-color="#0f1220"/>
     </linearGradient>
     <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7dd3fc"/>
-      <stop offset="1" stop-color="#a78bfa"/>
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#67e8f9"/>
     </linearGradient>
-    <radialGradient id="glow1" cx="0.18" cy="0.0" r="0.55">
-      <stop offset="0" stop-color="#7dd3fc" stop-opacity="0.30"/>
-      <stop offset="1" stop-color="#7dd3fc" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glow2" cx="0.95" cy="0.05" r="0.55">
-      <stop offset="0" stop-color="#a78bfa" stop-opacity="0.30"/>
+    <linearGradient id="grad-text" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#c4b5fd"/>
+      <stop offset="1" stop-color="#67e8f9"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.92" cy="0.08" r="0.55">
+      <stop offset="0" stop-color="#a78bfa" stop-opacity="0.32"/>
       <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
     </radialGradient>
+    <radialGradient id="glow2" cx="0.05" cy="0.92" r="0.45">
+      <stop offset="0" stop-color="#67e8f9" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#67e8f9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rootGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#a78bfa" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rootFill" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#c4b5fd" stop-opacity="1"/>
+      <stop offset="1" stop-color="#7c3aed" stop-opacity="0.85"/>
+    </radialGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" stroke="#ffffff" stroke-opacity="0.025" stroke-width="1" fill="none"/>
+    </pattern>
   </defs>
 
+  <!-- background -->
   <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
   <rect width="1200" height="630" fill="url(#glow1)"/>
   <rect width="1200" height="630" fill="url(#glow2)"/>
 
-  <!-- mark -->
-  <g transform="translate(80,80)">
-    <rect width="84" height="84" rx="18" fill="url(#brand)"/>
-    <path d="M22 32h40 M42 32v36" stroke="#0b0d12" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <!-- brand mark + name -->
+  <g transform="translate(72,64)">
+    <rect width="44" height="44" rx="10" fill="url(#brand)"/>
+    <path d="M11 16h22 M22 16v18" stroke="#0a0c14" stroke-width="3.6" stroke-linecap="round" fill="none"/>
+  </g>
+  <text x="130" y="93" font-size="22" font-weight="600" fill="#eef0f7" letter-spacing="-0.01em">TSET</text>
+  <text x="180" y="93" font-size="13" font-weight="500" fill="#8a92a8" letter-spacing="0.08em" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">v0.3.2 · MIT</text>
+
+  <!-- pill: receipts tag -->
+  <g transform="translate(72,140)">
+    <rect width="320" height="34" rx="17" fill="#0f1220" stroke="#2a3148"/>
+    <rect x="6" y="6" width="86" height="22" rx="11" fill="url(#brand)"/>
+    <text x="49" y="22" font-size="11" font-weight="700" fill="#0a0c14" letter-spacing="0.08em" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" text-anchor="middle">RECEIPTS</text>
+    <text x="106" y="22" font-size="13" fill="#c4c9d7">for LLM training data</text>
   </g>
 
-  <text x="190" y="142" font-size="44" font-weight="700" fill="#e6e9f2" letter-spacing="0.04em">TSET</text>
-  <text x="190" y="172" font-size="18" font-weight="500" fill="#9aa3b8" letter-spacing="0.06em">v0.3.2 · MIT</text>
-
   <!-- headline -->
-  <text x="80" y="320" font-size="70" font-weight="800" fill="#e6e9f2" letter-spacing="-0.02em">Training data your model</text>
-  <text x="80" y="400" font-size="70" font-weight="800" letter-spacing="-0.02em">
-    <tspan fill="#e6e9f2">can </tspan><tspan fill="url(#brand)">prove</tspan><tspan fill="#e6e9f2"> it actually saw.</tspan>
+  <text x="72" y="262" font-size="68" font-weight="700" fill="#eef0f7" letter-spacing="-0.035em">The receipts layer</text>
+  <text x="72" y="338" font-size="68" font-weight="700" letter-spacing="-0.035em">
+    <tspan fill="#eef0f7">for </tspan><tspan fill="url(#grad-text)">LLM training data.</tspan>
   </text>
 
   <!-- sub -->
-  <text x="80" y="465" font-size="24" fill="#9aa3b8">An open binary format for LLM training corpora.</text>
-  <text x="80" y="498" font-size="24" fill="#9aa3b8">Store text once. Tokenize many ways. Verify everywhere.</text>
+  <text x="72" y="400" font-size="22" fill="#c4c9d7" letter-spacing="-0.005em">One open binary format. Provable inclusion.</text>
+  <text x="72" y="432" font-size="22" fill="#c4c9d7" letter-spacing="-0.005em">Provable exclusion. Signed audit log.</text>
 
   <!-- chips -->
-  <g font-size="18" font-weight="600" fill="#e6e9f2">
-    <g transform="translate(80,548)">
-      <rect width="180" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
-      <text x="90" y="27" text-anchor="middle">BLAKE3</text>
+  <g font-size="13" font-weight="500" fill="#c4c9d7" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" letter-spacing="0.04em">
+    <g transform="translate(72,500)">
+      <rect width="118" height="34" rx="17" fill="#0f1220" stroke="#1f2538"/>
+      <text x="59" y="22" text-anchor="middle">BLAKE3</text>
     </g>
-    <g transform="translate(272,548)">
-      <rect width="220" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
-      <text x="110" y="27" text-anchor="middle">Sparse Merkle Tree</text>
+    <g transform="translate(202,500)">
+      <rect width="172" height="34" rx="17" fill="#0f1220" stroke="#1f2538"/>
+      <text x="86" y="22" text-anchor="middle">Sparse Merkle Tree</text>
     </g>
-    <g transform="translate(504,548)">
-      <rect width="200" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
-      <text x="100" y="27" text-anchor="middle">Ed25519 audit log</text>
+    <g transform="translate(386,500)">
+      <rect width="148" height="34" rx="17" fill="#0f1220" stroke="#1f2538"/>
+      <text x="74" y="22" text-anchor="middle">Ed25519 signed</text>
     </g>
-    <g transform="translate(716,548)">
-      <rect width="240" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
-      <text x="120" y="27" text-anchor="middle">Rust core + PyO3</text>
+    <g transform="translate(546,500)">
+      <rect width="184" height="34" rx="17" fill="#0f1220" stroke="#1f2538"/>
+      <text x="92" y="22" text-anchor="middle">Rust core + Python</text>
     </g>
   </g>
 
+  <!-- ── Merkle motif on the right ── -->
+  <g transform="translate(820,150)">
+    <!-- glow -->
+    <circle cx="160" cy="40" r="80" fill="url(#rootGlow)"/>
+
+    <!-- edges -->
+    <g stroke="#2a3148" stroke-width="1.2" fill="none">
+      <path d="M160 40 L60 150"/>
+      <path d="M160 40 L260 150"/>
+      <path d="M60 165 L20 270"/>
+      <path d="M60 165 L100 270"/>
+      <path d="M260 165 L220 270"/>
+      <path d="M260 165 L300 270"/>
+      <path d="M20 285 L0 370"/>
+      <path d="M20 285 L40 370"/>
+      <path d="M100 285 L80 370"/>
+      <path d="M100 285 L120 370"/>
+      <path d="M220 285 L200 370"/>
+      <path d="M220 285 L240 370"/>
+      <path d="M300 285 L280 370"/>
+      <path d="M300 285 L320 370"/>
+    </g>
+
+    <!-- leaves -->
+    <g fill="#151a2c" stroke="#2a3148">
+      <circle cx="0"   cy="378" r="11"/>
+      <circle cx="40"  cy="378" r="11"/>
+      <circle cx="80"  cy="378" r="11"/>
+      <circle cx="120" cy="378" r="11"/>
+      <circle cx="200" cy="378" r="11"/>
+      <circle cx="240" cy="378" r="11"/>
+      <circle cx="280" cy="378" r="11"/>
+      <circle cx="320" cy="378" r="11"/>
+    </g>
+
+    <!-- inner -->
+    <g fill="#0f1220" stroke="#2a3148">
+      <circle cx="20"  cy="278" r="14"/>
+      <circle cx="100" cy="278" r="14"/>
+      <circle cx="220" cy="278" r="14"/>
+      <circle cx="300" cy="278" r="14"/>
+      <circle cx="60"  cy="158" r="17"/>
+      <circle cx="260" cy="158" r="17"/>
+    </g>
+
+    <!-- root -->
+    <circle cx="160" cy="40" r="28" fill="url(#rootFill)" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="160" y="44" text-anchor="middle" font-size="11" font-weight="700" fill="#0a0c14" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" letter-spacing="0.08em">ROOT</text>
+
+    <!-- label -->
+    <text x="160" y="-8" text-anchor="middle" font-size="10" fill="#8a92a8" font-family="JetBrains Mono, ui-monospace, Menlo, monospace" letter-spacing="0.06em">shard_merkle_root</text>
+  </g>
+
   <!-- corner url -->
-  <text x="1120" y="600" text-anchor="end" font-size="18" fill="#9aa3b8" letter-spacing="0.04em">github.com/humancto/tset</text>
+  <text x="1128" y="600" text-anchor="end" font-size="14" fill="#8a92a8" letter-spacing="0.04em" font-family="JetBrains Mono, ui-monospace, Menlo, monospace">humancto.github.io/tset</text>
 </svg>
