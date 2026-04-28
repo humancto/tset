@@ -90,10 +90,8 @@ pub fn read_chunk_with_bits(
     let bytes_per_token = match bits_per_token {
         16 => 2usize,
         32 => 4usize,
-        other => {
-            return Err(TsetError::BadManifest(match other {
-                _ => "unsupported bits_per_token (must be 16 or 32 in v0.3)",
-            }))
+        _other => {
+            return Err(TsetError::BadManifest("unsupported bits_per_token (must be 16 or 32 in v0.3)"))
         }
     };
     if raw.len() % bytes_per_token != 0 {

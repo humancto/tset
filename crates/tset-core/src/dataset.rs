@@ -562,28 +562,6 @@ pub(crate) fn format_snapshot_id(secs_since_epoch: f64) -> String {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn snapshot_id_matches_python_strftime() {
-        // From Python (Apr 2026):
-        //   import calendar
-        //   calendar.timegm((2026, 4, 27, 15, 34, 22, 0, 0, 0))  -> 1777304062
-        //   datetime.fromtimestamp(1777304062, timezone.utc)
-        //     .strftime("snapshot-%Y%m%d-%H%M%S")
-        //     -> "snapshot-20260427-153422"
-        let t = 1_777_304_062.0;
-        assert_eq!(format_snapshot_id(t), "snapshot-20260427-153422");
-    }
-
-    #[test]
-    fn snapshot_id_zero_is_unix_epoch() {
-        assert_eq!(format_snapshot_id(0.0), "snapshot-19700101-000000");
-    }
-}
-
 /// Hinnant's "days_from_civil" inverse — returns (year, month, day).
 /// Days are unix epoch days (1970-01-01 = 0).
 fn civil_from_days(z: i64) -> (i32, u32, u32) {
@@ -654,5 +632,27 @@ fn write_pretty_sorted(v: &Value, indent: usize, out: &mut String) {
             }
             out.push('}');
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_id_matches_python_strftime() {
+        // From Python (Apr 2026):
+        //   import calendar
+        //   calendar.timegm((2026, 4, 27, 15, 34, 22, 0, 0, 0))  -> 1777304062
+        //   datetime.fromtimestamp(1777304062, timezone.utc)
+        //     .strftime("snapshot-%Y%m%d-%H%M%S")
+        //     -> "snapshot-20260427-153422"
+        let t = 1_777_304_062.0;
+        assert_eq!(format_snapshot_id(t), "snapshot-20260427-153422");
+    }
+
+    #[test]
+    fn snapshot_id_zero_is_unix_epoch() {
+        assert_eq!(format_snapshot_id(0.0), "snapshot-19700101-000000");
     }
 }

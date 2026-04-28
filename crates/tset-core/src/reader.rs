@@ -59,17 +59,11 @@ pub struct Reader {
 /// path you can re-open with `skip_reproducibility=true` to avoid
 /// re-tokenizing the test_vector documents on every open.
 #[derive(Debug, Clone, Copy)]
+#[derive(Default)]
 pub struct OpenOptions {
     pub skip_reproducibility: bool,
 }
 
-impl Default for OpenOptions {
-    fn default() -> Self {
-        Self {
-            skip_reproducibility: false,
-        }
-    }
-}
 
 impl Reader {
     pub fn open<P: AsRef<Path>>(path: P) -> TsetResult<Self> {
@@ -251,15 +245,9 @@ impl Reader {
         // bodies, the same way strict-v0.2 rejects chunks without
         // content_hash. Verification is a single-section decode; the
         // section bytes remain mmapped, no extra allocation.
-        if let Err(e) = self.on_disk_smt() {
-            return Err(e);
-        }
-        if let Err(e) = self.on_disk_audit_log() {
-            return Err(e);
-        }
-        if let Err(e) = self.on_disk_columns() {
-            return Err(e);
-        }
+        self.on_disk_smt()?;
+        self.on_disk_audit_log()?;
+        self.on_disk_columns()?;
 
         // `skip_reproducibility` short-circuits this — only sound on a
         // hot streaming open of a shard the caller has already verified.
@@ -569,7 +557,7 @@ impl<'a> TokenizationView<'a> {
         let mut out = Vec::with_capacity(self.total_tokens as usize);
         for chunk in &self.chunks {
             let arr = read_chunk_with_bits(
-                &self.mmap,
+                self.mmap,
                 self.view_offset,
                 chunk,
                 Some(self.vocab_size),

@@ -2,6 +2,12 @@
 //!
 //! Imported as: `from tset import _rs` (the Python shim re-exports it).
 
+// PyO3's #[pymethods] macro expansion triggers `useless_conversion`
+// on the generated trampolines that wrap our Result returns; the
+// conversions are correct, just visible. Same posture for needless
+// borrows the macro inserts.
+#![allow(clippy::useless_conversion, clippy::needless_borrow)]
+
 use std::path::PathBuf;
 
 use pyo3::exceptions::{PyKeyError, PyValueError};
@@ -139,7 +145,7 @@ impl PyReader {
     }
 
     fn doc_hashes_hex(&self) -> Vec<String> {
-        self.inner.doc_hashes().map(|h| hex::encode(h)).collect()
+        self.inner.doc_hashes().map(hex::encode).collect()
     }
 
     /// On-disk TSMT section. Returns None if the shard wasn't written

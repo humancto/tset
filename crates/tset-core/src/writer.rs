@@ -265,7 +265,7 @@ impl Writer {
                         "byte_offset_in_view": c.byte_offset_in_view,
                         "compressed_size": c.compressed_size,
                         "num_tokens": c.num_tokens,
-                        "content_hash": c.content_hash.map(|h| hex::encode(h)),
+                        "content_hash": c.content_hash.map(hex::encode),
                     })
                 })
                 .collect();
@@ -345,7 +345,7 @@ impl Writer {
             "smt_present_keys".into(),
             json!(smt.present_keys()
                 .iter()
-                .map(|k| hex::encode(k))
+                .map(hex::encode)
                 .collect::<Vec<_>>()),
         );
         manifest.insert("smt_version".into(), json!("v0.1-fixed-256"));
@@ -502,7 +502,7 @@ fn fill_random(out: &mut [u8]) {
         .unwrap_or(0);
     let mut buf: Vec<u8> = Vec::with_capacity(32);
     buf.extend_from_slice(&counter.to_le_bytes());
-    buf.extend_from_slice(&(now as u128).to_le_bytes());
+    buf.extend_from_slice(&now.to_le_bytes());
     let h = hash_bytes(&buf);
     out.copy_from_slice(&h[..out.len()]);
 }
@@ -662,7 +662,7 @@ pub fn append_tokenizer_view<P: AsRef<Path>>(
                 "byte_offset_in_view": c.byte_offset_in_view,
                 "compressed_size": c.compressed_size,
                 "num_tokens": c.num_tokens,
-                "content_hash": c.content_hash.map(|h| hex::encode(h)),
+                "content_hash": c.content_hash.map(hex::encode),
             })
         })
         .collect();

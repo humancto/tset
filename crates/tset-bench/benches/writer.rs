@@ -37,7 +37,8 @@ fn bench_writer(c: &mut Criterion) {
 fn bench_tokenizer_swap(c: &mut Criterion) {
     let dir = tempfile::tempdir().unwrap();
     let mut group = c.benchmark_group("tokenizer_swap");
-    for &(n_docs, doc_size) in &[(500usize, 1024usize)] {
+    {
+        let &(n_docs, doc_size) = &(500usize, 1024usize);
         group.throughput(Throughput::Bytes((n_docs * doc_size) as u64));
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("{n_docs}x{doc_size}_two_views")),

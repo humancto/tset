@@ -105,7 +105,7 @@ pub struct InclusionProof {
 impl InclusionProof {
     pub fn verify(&self, expected_root: &Hash) -> bool {
         verify_path(&self.key, present_leaf(), &self.siblings)
-            .map_or(false, |r| &r == expected_root)
+            .is_some_and(|r| &r == expected_root)
     }
 }
 
@@ -118,7 +118,7 @@ pub struct NonInclusionProof {
 impl NonInclusionProof {
     pub fn verify(&self, expected_root: &Hash) -> bool {
         verify_path(&self.key, absent_leaf(), &self.siblings)
-            .map_or(false, |r| &r == expected_root)
+            .is_some_and(|r| &r == expected_root)
     }
 }
 
@@ -176,7 +176,7 @@ impl SparseMerkleTree {
             let bit = bit_msb(&key, depth);
             if bit == 0 {
                 if node.left.is_none() {
-                    node.left = Some(Child::Internal(Box::new(Internal::default())));
+                    node.left = Some(Child::Internal(Box::default()));
                 }
                 node = match node.left.as_mut().unwrap() {
                     Child::Internal(b) => b.as_mut(),
@@ -184,7 +184,7 @@ impl SparseMerkleTree {
                 };
             } else {
                 if node.right.is_none() {
-                    node.right = Some(Child::Internal(Box::new(Internal::default())));
+                    node.right = Some(Child::Internal(Box::default()));
                 }
                 node = match node.right.as_mut().unwrap() {
                     Child::Internal(b) => b.as_mut(),

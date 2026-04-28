@@ -22,6 +22,12 @@ pub trait ObjectStore: Send + Sync {
     /// Total length of the object in bytes.
     fn len(&self) -> TsetResult<u64>;
 
+    /// `len() == 0`. Default impl is provided so callers can write
+    /// idiomatic empty-checks without each backend re-implementing it.
+    fn is_empty(&self) -> TsetResult<bool> {
+        Ok(self.len()? == 0)
+    }
+
     /// Range read: `start..end`. Implementations should return exactly
     /// `end - start` bytes; a short read is a `TsetError::BadManifest`.
     fn range_read(&self, start: u64, end: u64) -> TsetResult<Vec<u8>>;
