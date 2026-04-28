@@ -1,0 +1,7 @@
+Click is © Pallets and contributors, distributed under the
+BSD 3-Clause License:
+
+  https://github.com/pallets/click/blob/8.1.7/LICENSE.rst
+
+The TSET project redistributes the .py files unmodified for use as a
+showcase dataset. No warranty.

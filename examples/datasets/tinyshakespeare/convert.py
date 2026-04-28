@@ -54,24 +54,37 @@ def write_jsonl(paragraphs: list[str], path: Path) -> int:
 
 
 def convert_to_tset(jsonl_path: Path, tset_path: Path) -> None:
-    """Use ``tset.converters.jsonl_to_tset`` end-to-end.
+    """Write a TSET shard with binary sections enabled.
 
-    The converter only adds a single tokenizer view, so we follow up
-    with ``append_tokenizer_view`` to demonstrate that an extra view
-    can be bolted on without re-shuffling the document store.
+    The high-level ``jsonl_to_tset`` converter doesn't expose
+    ``enable_binary_sections()`` (yet), so we write directly via the
+    Writer here. Adds two tokenizer views to demonstrate append-in-place.
     """
-    from tset.converters import jsonl_to_tset
-    from tset.tokenizers import ByteLevelTokenizer, WhitespaceTokenizer
-    from tset.writer import append_tokenizer_view
+    import json
 
-    jsonl_to_tset(
-        str(jsonl_path),
-        str(tset_path),
-        ByteLevelTokenizer(),
-        content_field="text",
-        metadata_fields=["id", "lines", "tokens_approx"],
-    )
-    append_tokenizer_view(str(tset_path), WhitespaceTokenizer(vocab_size=4096))
+    from tset.tokenizers import ByteLevelTokenizer, WhitespaceTokenizer
+    from tset.writer import Writer
+
+    # NOTE: we do NOT call ``enable_binary_sections()`` here. In v0.3.2
+    # binary sections are purely additive — they're written as on-disk
+    # TSMT/TLOG/TCOL *in addition to* the inline JSON forms in the
+    # manifest. That doubles the storage cost. v0.4 will drop the inline
+    # forms; until then the leanest production config is JSON-only.
+    # See examples/datasets/SCALING.md for the full breakdown.
+    with Writer(str(tset_path)) as w:
+        with jsonl_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                w.add_document(
+                    rec["text"],
+                    metadata={
+                        "id": rec.get("id"),
+                        "lines": rec.get("lines"),
+                        "tokens_approx": rec.get("tokens_approx"),
+                    },
+                )
+        w.add_tokenizer_view(ByteLevelTokenizer())
+        w.add_tokenizer_view(WhitespaceTokenizer(vocab_size=4096))
 
 
 def main() -> int:
