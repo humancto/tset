@@ -108,12 +108,25 @@ def fixture_big(w: Writer) -> None:
     w.add_tokenizer_view(ByteLevelTokenizer())
 
 
+def fixture_sections(w: Writer) -> None:
+    """v0.3.2 fixture: identical contents to fixture-small, but with
+    on-disk TSMT/TLOG/TCOL sections emitted alongside the in-manifest
+    forms. Locks the binary section wire format."""
+    w.enable_binary_sections()
+    w.add_document(b"alpha document text", metadata={"lang": "en", "len": 19})
+    w.add_document(b"beta", metadata={"lang": "fr", "len": 4})
+    w.add_document(b"gamma payload here", metadata={"lang": "en", "len": 18})
+    w.add_tokenizer_view(ByteLevelTokenizer())
+    w.add_tokenizer_view(WhitespaceTokenizer(vocab_size=1024))
+
+
 def main() -> None:
     os.makedirs(FIXTURES, exist_ok=True)
     cases = [
         ("fixture-empty", fixture_empty),
         ("fixture-small", fixture_small),
         ("fixture-big", fixture_big),
+        ("fixture-sections", fixture_sections),
     ]
     for name, build in cases:
         shard = os.path.join(FIXTURES, f"{name}.tset")

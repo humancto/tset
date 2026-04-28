@@ -76,6 +76,15 @@ class Writer:
         self._audit = AuditLog()
         self._smt = SparseMerkleTree()
         self._closed = False
+        # When true, encode TSMT/TLOG/TCOL on-disk binary sections in
+        # the body (in addition to the in-manifest forms). v0.3.2
+        # additive feature; default off so existing fixtures stay
+        # byte-stable.
+        self._emit_binary_sections = False
+
+    def enable_binary_sections(self) -> "Writer":
+        self._emit_binary_sections = True
+        return self
 
     def __enter__(self) -> "Writer":
         return self
@@ -222,6 +231,44 @@ class Writer:
         M.manifest_set_subsets(manifest, [s.to_dict() for s in self._subsets])
         manifest["smt_present_keys"] = [k.hex() for k in self._smt.present_keys()]
         manifest["smt_version"] = "v0.1-fixed-256"
+
+        # Opt-in v0.3.2 feature: emit on-disk TSMT/TLOG/TCOL sections
+        # AFTER tokenization views and BEFORE the manifest. v0.4 readers
+        # will prefer these; v0.1–v0.3 readers ignore unknown manifest
+        # keys + skip unknown body bytes via section length headers.
+        if self._emit_binary_sections:
+            from tset import sections as _sec
+
+            tsmt_bytes = _sec.encode_tsmt_section(self._smt.present_keys(), smt_root)
+            tsmt_offset = HEADER_SIZE + len(body)
+            body += tsmt_bytes
+            manifest["smt_section"] = {
+                "offset": tsmt_offset,
+                "size": len(tsmt_bytes),
+            }
+
+            audit_dict = self._audit.to_dict()
+            log_root_hex = audit_dict.get("log_root", "")
+            log_root = (
+                bytes.fromhex(log_root_hex) if log_root_hex else b"\x00" * 32
+            )
+            tlog_bytes = _sec.encode_tlog_section(audit_dict, log_root)
+            tlog_offset = HEADER_SIZE + len(body)
+            body += tlog_bytes
+            manifest["audit_log_section"] = {
+                "offset": tlog_offset,
+                "size": len(tlog_bytes),
+            }
+
+            cols_dict = self._columns.to_dict()
+            row_count = cols_dict.get("row_count", 0)
+            tcol_bytes = _sec.encode_tcol_section(cols_dict, row_count)
+            tcol_offset = HEADER_SIZE + len(body)
+            body += tcol_bytes
+            manifest["metadata_columns_section"] = {
+                "offset": tcol_offset,
+                "size": len(tcol_bytes),
+            }
 
         manifest_bytes = M.encode_manifest(manifest)
         manifest_hash = hash_bytes(manifest_bytes)
