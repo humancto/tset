@@ -1,0 +1,13 @@
+# Cached downloads (content-addressed; never committed)
+.cache/
+
+# Per-dataset build outputs
+*/out/
+*/*.tset
+*/*.jsonl
+*/*.parquet
+*/*.tar
+*/*.mds/
+
+# Allow a tiny redistributable fixture if a dataset wants one
+!*/fixtures/*.tset

@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#07080d" media="(prefers-color-scheme: dark)" />
+
+  <title>TSET — measured results on real public corpora</title>
+  <meta name="description" content="Storage and read-throughput numbers for TSET vs JSONL, Parquet, WebDataset, MDS — measured on TinyShakespeare, Click source, and a 100 MB synthetic stream. All scripts and raw JSON results are reproducible." />
+  <link rel="canonical" href="https://humancto.github.io/tset/showcase/" />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="TSET — measured results on real public corpora" />
+  <meta property="og:description" content="Honest size + speed numbers vs JSONL, Parquet, WebDataset, MDS. Includes the 5 TB scaling projection and the deal-breaker triage." />
+  <meta property="og:image" content="https://humancto.github.io/tset/assets/og-image.png" />
+  <meta property="og:url" content="https://humancto.github.io/tset/showcase/" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://humancto.github.io/tset/assets/og-image.png" />
+
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="../assets/favicon-192.png" />
+  <link rel="preconnect" href="https://rsms.me" crossorigin />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="../assets/style.css" />
+  <style>
+    .kv-tight { font-size: 14px; }
+    .kv-tight td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .kv-tight th { text-align: left; padding: 10px 12px; font-weight: 600; color: var(--fg-2); border-bottom: 1px solid var(--line-2); font-size: 13px; }
+    .data-table { width: 100%; border-collapse: collapse; margin: 24px 0 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+    .data-table th { background: var(--bg-2); }
+    .data-table .right { text-align: right; }
+    .data-table .accent { color: var(--cyan); font-weight: 600; font-family: var(--mono); }
+    .data-table .warn { color: var(--amber); }
+    .data-table .pos { color: var(--green); }
+    .callout { margin: 28px 0; padding: 24px 28px; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--violet); border-radius: var(--r); }
+    .callout.warn { border-left-color: var(--amber); }
+    .callout.good { border-left-color: var(--green); }
+    .callout p { margin: 0 0 8px; }
+    .callout p:last-child { margin: 0; }
+    .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 32px 0; }
+    @media (max-width: 720px) { .stat-row { grid-template-columns: 1fr; } }
+    .stat-row .stat-card .v { font-size: 44px; }
+    .stat-row .stat-card .v small { font-size: 14px; color: var(--muted); font-weight: 400; }
+    .footnote { color: var(--muted); font-size: 13.5px; }
+  </style>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="../">
+      <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+        <rect x="2" y="2" width="28" height="28" rx="7" fill="url(#brandG)"/>
+        <path d="M8.5 11.5h15M16 11.5v13" stroke="#0a0c14" stroke-width="2.6" stroke-linecap="round"/>
+        <defs><linearGradient id="brandG" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#67e8f9"/>
+        </linearGradient></defs>
+      </svg>
+      <span>TSET</span>
+      <span class="ver">showcase</span>
+    </a>
+    <nav>
+      <a href="../#why">Why</a>
+      <a href="../#how">How</a>
+      <a href="../#code">Code</a>
+      <a href="../#status">Status</a>
+      <a class="gh" href="https://github.com/humancto/tset" rel="noopener">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap" style="max-width: 980px; padding-top: 80px; padding-bottom: 80px;">
+
+  <p class="eyebrow">Showcase · measured results</p>
+  <h1 style="font-size: clamp(36px, 5vw, 56px);">Real corpora. Real numbers. <span class="grad">No marketing bytes.</span></h1>
+  <p class="lede" style="max-width: 740px;">
+    Three public corpora, three TSET configurations, five competitor formats.
+    Every number on this page comes from running the scripts in
+    <code>examples/datasets/</code>; reproduce locally with one command per
+    section. The full discussion lives in
+    <a href="https://github.com/humancto/tset/blob/main/examples/datasets/SCALING.md" rel="noopener" style="color: var(--cyan);">SCALING.md</a>.
+  </p>
+
+  <!-- ── Stat row ────────────────────────────────────────────── -->
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="v">1.57<small>×</small></div>
+      <div class="l">TSET / JSONL ratio. <strong>Flat</strong> from 1 MB to 100 MB on synthetic web-shaped corpora.</div>
+    </div>
+    <div class="stat-card">
+      <div class="v">0.64<small>×</small></div>
+      <div class="l">TSET on Click 8.1.7 source — <strong>smaller than JSONL</strong> when docs are large.</div>
+    </div>
+    <div class="stat-card">
+      <div class="v">~600<small> B / doc</small></div>
+      <div class="l">Inline manifest overhead per document in v0.3.2. Per-doc, not per-byte.</div>
+    </div>
+  </div>
+
+  <!-- ── Headline ────────────────────────────────────────────── -->
+  <div class="callout good">
+    <p style="font-size: 17px;"><strong>One sentence:</strong> TSET overhead is per-document, not per-byte. The size ratio depends on your corpus's bytes-per-doc, not how many bytes you have.</p>
+    <p>Web-shaped corpora (~1 KB / doc) sit at <strong>~1.5×</strong>. Code corpora (>5 KB / doc) sit at <strong>&lt;1×</strong> — TSET shrinks them. Tweet-shaped corpora (~200 B / doc) sit at <strong>~4–5×</strong> and need to be sharded before ingest. See the deal-breaker triage at the bottom.</p>
+  </div>
+
+  <!-- ── Scale ───────────────────────────────────────────────── -->
+  <h2 style="margin-top: 56px;">Scale: does the ratio hold?</h2>
+  <p>Synthetic web-shaped corpus (~800 B / doc). Same TSET configurations across three orders of magnitude.</p>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Scale</th>
+        <th class="right">JSONL</th>
+        <th class="right">TSET · 1 view</th>
+        <th class="right">× JSONL</th>
+        <th class="right">TSET · 2 views</th>
+        <th class="right">× JSONL</th>
+        <th class="right">2 views + sections</th>
+        <th class="right">× JSONL</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>1 MB</td><td class="right">977 KB</td><td class="right">1.5 MB</td><td class="right accent">1.56×</td><td class="right">1.9 MB</td><td class="right">2.01×</td><td class="right">2.4 MB</td><td class="right">2.54×</td></tr>
+      <tr><td>10 MB</td><td class="right">9.5 MB</td><td class="right">15.0 MB</td><td class="right accent">1.57×</td><td class="right">19.2 MB</td><td class="right">2.01×</td><td class="right">24.3 MB</td><td class="right">2.55×</td></tr>
+      <tr><td>100 MB</td><td class="right">95.4 MB</td><td class="right">149.9 MB</td><td class="right accent">1.57×</td><td class="right">192.2 MB</td><td class="right">2.02×</td><td class="right">243.4 MB</td><td class="right">2.55×</td></tr>
+    </tbody>
+  </table>
+
+  <p class="footnote">
+    Reproduce: <code>python -m examples.datasets.synthetic_stream.scale_bench</code>.
+    Output: <code>examples/datasets/synthetic_stream/out/scale_bench.json</code>.
+  </p>
+
+  <!-- ── Competitive ──────────────────────────────────────────── -->
+  <h2 style="margin-top: 56px;">Cross-format competitive (10 MB synthetic)</h2>
+  <p>Same corpus through every common training-data container.</p>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Format</th>
+        <th class="right">On-disk size</th>
+        <th class="right">× JSONL</th>
+        <th class="right">Write</th>
+        <th class="right">Read all docs</th>
+        <th>Receipts?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>JSONL</td><td class="right">9.5 MB</td><td class="right">1.00×</td><td class="right">—</td><td class="right">40 ms</td><td>none</td></tr>
+      <tr><td>JSONL + zstd</td><td class="right pos">2.6 MB</td><td class="right pos">0.27×</td><td class="right">56 ms</td><td class="right">26 ms</td><td>none</td></tr>
+      <tr><td>Parquet (zstd)</td><td class="right pos">2.7 MB</td><td class="right pos">0.29×</td><td class="right">52 ms</td><td class="right">61 ms</td><td>none</td></tr>
+      <tr><td>WebDataset (.tar)</td><td class="right warn">29.0 MB</td><td class="right warn">3.04×</td><td class="right">976 ms</td><td class="right">602 ms</td><td>none</td></tr>
+      <tr><td>MDS (mosaicml-streaming)</td><td class="right">—</td><td class="right">—</td><td class="right">—</td><td class="right">—</td><td><span class="footnote">not installed in this run</span></td></tr>
+      <tr><td><strong>TSET · 1 view, no sections</strong></td><td class="right accent">15.0 MB</td><td class="right accent">1.57×</td><td class="right">7.0 s</td><td class="right">188 ms</td><td><strong>full</strong></td></tr>
+      <tr><td>TSET · 2 views, no sections</td><td class="right">19.2 MB</td><td class="right">2.01×</td><td class="right">11.3 s</td><td class="right">204 ms</td><td>full + 2nd view</td></tr>
+      <tr><td>TSET · 2 views + v0.3.2 sections</td><td class="right">24.3 MB</td><td class="right">2.55×</td><td class="right">10.9 s</td><td class="right">192 ms</td><td>full + binary forms</td></tr>
+    </tbody>
+  </table>
+
+  <p class="footnote">Reproduce: <code>python -m examples.datasets.synthetic_stream.competitive</code>. Output: <code>examples/datasets/synthetic_stream/out/competitive.json</code>.</p>
+
+  <!-- ── Per-corpus ──────────────────────────────────────────── -->
+  <h2 style="margin-top: 56px;">Per-corpus ratios on real public data</h2>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Corpus</th>
+        <th class="right">Documents</th>
+        <th class="right">Avg doc</th>
+        <th class="right">JSONL</th>
+        <th class="right">TSET (1 view)</th>
+        <th class="right">Ratio</th>
+        <th>Why this ratio</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>TinyShakespeare</td>
+        <td class="right">7,148 unique<br/><span class="footnote">(74 dedup'd)</span></td>
+        <td class="right">155 B</td>
+        <td class="right">1.5 MB</td>
+        <td class="right">6.2 MB</td>
+        <td class="right warn">4.05×</td>
+        <td>tiny paragraphs → manifest overhead dominates</td>
+      </tr>
+      <tr>
+        <td>Synthetic web</td>
+        <td class="right">11,830</td>
+        <td class="right">~800 B</td>
+        <td class="right">9.5 MB</td>
+        <td class="right">15.0 MB</td>
+        <td class="right accent">1.57×</td>
+        <td>web-shaped — typical real-world ratio</td>
+      </tr>
+      <tr>
+        <td>Click 8.1.7 source</td>
+        <td class="right">71</td>
+        <td class="right">~7.8 KB</td>
+        <td class="right">591 KB</td>
+        <td class="right">377 KB</td>
+        <td class="right pos">0.64×</td>
+        <td>large docs → zstd wins, manifest is rounding error</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ── Why ─────────────────────────────────────────────────── -->
+  <h2 style="margin-top: 56px;">Why does the ratio vary so much?</h2>
+
+  <p>
+    Profiling a TinyShakespeare shard with all v0.3.2 sections enabled
+    (<a href="https://github.com/humancto/tset/blob/main/examples/datasets/_lib/profile_size.py" rel="noopener" style="color: var(--cyan);">profile_size.py</a>):
+  </p>
+
+  <table class="data-table">
+    <thead><tr><th>Region</th><th class="right">Bytes</th><th class="right">% of file</th></tr></thead>
+    <tbody>
+      <tr><td>header (fixed)</td><td class="right">4 KB</td><td class="right">0.0%</td></tr>
+      <tr><td>doc store (zstd-compressed text)</td><td class="right">681 KB</td><td class="right">6.1%</td></tr>
+      <tr><td>view: byte-level-v1</td><td class="right">652 KB</td><td class="right">5.8%</td></tr>
+      <tr><td>view: whitespace-hashed-v1</td><td class="right">409 KB</td><td class="right">3.6%</td></tr>
+      <tr><td>section: TSMT (binary SMT)</td><td class="right">229 KB</td><td class="right">2.0%</td></tr>
+      <tr><td>section: TLOG (binary audit log)</td><td class="right warn">2.9 MB</td><td class="right warn">26.2%</td></tr>
+      <tr><td>section: TCOL (binary metadata)</td><td class="right">135 KB</td><td class="right">1.2%</td></tr>
+      <tr><td><strong>manifest (canonical JSON tail)</strong></td><td class="right warn"><strong>6.2 MB</strong></td><td class="right warn"><strong>55.0%</strong></td></tr>
+      <tr><td>footer (fixed)</td><td class="right">64 B</td><td class="right">0.0%</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    The JSON manifest dominates. Inside it, <code>audit_log</code> alone is
+    47.6% of the manifest <em>and</em> is duplicated by the binary TLOG
+    section (the v0.3.2 transitional state — v0.4 drops the inline form).
+    <code>smt_present_keys</code> is fully redundant with the
+    <code>document_index</code>; that's another 7.8% of waste. Hex
+    encoding of every 32-byte hash to 64 chars accounts for another
+    chunk.
+  </p>
+
+  <div class="callout">
+    <p>
+      <strong>The "5×" headline isn't tokens or text — it's JSON manifest.</strong>
+      v0.4's mandatory binary sections + dropped inline forms are
+      projected to take an 11.2 MB shard down to ~7 MB without losing a
+      single capability.
+    </p>
+  </div>
+
+  <!-- ── Triage ───────────────────────────────────────────────── -->
+  <h2 style="margin-top: 56px;">Deal-breaker triage</h2>
+  <p>From real measurements, what's a real production blocker today vs. a knob:</p>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Concern</th>
+        <th>Severity</th>
+        <th>Mitigation today</th>
+        <th>v0.4 plan</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>4–5× JSONL on tiny-doc corpora</td>
+        <td><span class="warn">deal-breaker</span> for tweet-shaped data</td>
+        <td>Shard records into larger TSET documents</td>
+        <td>unchanged — fundamental to per-doc indexing</td>
+      </tr>
+      <tr>
+        <td>Inline duplication when binary sections enabled</td>
+        <td><span class="warn">bloat</span></td>
+        <td>Leave sections off until you need them</td>
+        <td>Mandatory sections, inline forms dropped</td>
+      </tr>
+      <tr>
+        <td>Hex encoding doubles every hash in JSON</td>
+        <td>minor</td>
+        <td>tolerate</td>
+        <td>base64 in manifest, binary in sections</td>
+      </tr>
+      <tr>
+        <td>Dataset Merkle root not bound to exclusion overlay</td>
+        <td><span class="warn">gap vs. pitch</span></td>
+        <td>Use exclusion overlay file directly; root behavior is captured by a behavior-probe test</td>
+        <td>Spec extends the leaf set</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    Detailed discussion + the "should I use this for 5 TB?" projection
+    is in
+    <a href="https://github.com/humancto/tset/blob/main/examples/datasets/SCALING.md" rel="noopener" style="color: var(--cyan);">examples/datasets/SCALING.md</a>.
+  </p>
+
+  <p style="margin-top: 56px;">
+    <a class="btn primary" href="../">← back to TSET <span class="arrow">→</span></a>
+    <a class="btn ghost" href="https://github.com/humancto/tset/tree/main/examples/datasets" rel="noopener">Browse the scripts</a>
+  </p>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="meta">
+      <strong>TSET</strong> · the receipts layer for LLM training data<br/>
+      MIT licensed · v0.3.2 · all numbers from real runs
+    </div>
+    <div class="links">
+      <a href="../">Home</a>
+      <a href="https://github.com/humancto/tset" rel="noopener">GitHub</a>
+      <a href="https://github.com/humancto/tset/blob/main/SPEC.md" rel="noopener">Spec</a>
+      <a href="https://github.com/humancto/tset/blob/main/examples/datasets/SCALING.md" rel="noopener">SCALING.md</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

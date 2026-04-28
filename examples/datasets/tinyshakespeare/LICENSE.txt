@@ -1,0 +1,15 @@
+TinyShakespeare corpus
+======================
+
+The text content is drawn from Shakespeare's plays, which are in the public
+domain. This particular concatenation was distributed by Andrej Karpathy as
+part of the char-rnn project:
+
+  https://github.com/karpathy/char-rnn
+
+The TSET project redistributes the file unmodified for use as a showcase
+dataset under CC0 1.0 Universal:
+
+  https://creativecommons.org/publicdomain/zero/1.0/
+
+No warranty.
