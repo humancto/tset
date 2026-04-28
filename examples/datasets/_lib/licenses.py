@@ -19,13 +19,13 @@ class License:
 
 
 LICENSES: dict[str, License] = {
-    "wikitext2": License(
-        spdx="CC-BY-SA-3.0",
-        name="Creative Commons Attribution-ShareAlike 3.0",
-        url="https://creativecommons.org/licenses/by-sa/3.0/",
+    "tinyshakespeare": License(
+        spdx="CC0-1.0",
+        name="Public domain (Shakespeare's works are out of copyright)",
+        url="https://creativecommons.org/publicdomain/zero/1.0/",
         attribution=(
-            "WikiText-2 dataset by Stephen Merity et al. "
-            "Source: Salesforce Research, https://blog.salesforceairesearch.com/the-wikitext-long-term-dependency-language-modeling-dataset/"
+            "TinyShakespeare corpus, popularised by Andrej Karpathy's char-rnn. "
+            "Source: https://github.com/karpathy/char-rnn/blob/master/data/tinyshakespeare/input.txt"
         ),
     ),
     "click_source": License(

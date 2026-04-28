@@ -15,8 +15,8 @@ the receipts pitch is dramatized concretely.
 
 | Dataset | Source | License | Why it's here |
 |---|---|---|---|
-| [`wikitext2/`](wikitext2/) | Salesforce S3 (Merity et al.) | CC-BY-SA-3.0 | Canonical Wikipedia LM benchmark — natural language at small scale (~5 MB). |
-| [`click_source/`](click_source/) | Pallets/Click on GitHub | BSD-3-Clause | Real Python source code — different vocabulary distribution from prose. |
+| [`tinyshakespeare/`](tinyshakespeare/) | karpathy/char-rnn on GitHub | Public domain / CC0-1.0 | Canonical small-scale ML text corpus (~1 MB) — natural language with strong line/structure signal. |
+| [`click_source/`](click_source/) | Pallets/Click on GitHub | BSD-3-Clause | Real Python source code (~340 KB) — different vocabulary distribution from prose. |
 | [`synthetic_stream/`](synthetic_stream/) | Generated locally | CC0-1.0 | 10k-document deterministic stream for throughput benchmarks. Reproducible offline. |
 
 ## What each subdirectory contains
@@ -39,10 +39,10 @@ Same shape across all three:
 
 ```bash
 # One dataset
-python -m examples.datasets.wikitext2.download
-python -m examples.datasets.wikitext2.convert
-python -m examples.datasets.wikitext2.prove
-python -m examples.datasets.wikitext2.bench
+python -m examples.datasets.tinyshakespeare.download
+python -m examples.datasets.tinyshakespeare.convert
+python -m examples.datasets.tinyshakespeare.prove
+python -m examples.datasets.tinyshakespeare.bench
 
 # All of them
 make showcase
