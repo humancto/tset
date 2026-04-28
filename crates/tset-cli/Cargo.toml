@@ -5,14 +5,22 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Command-line tool for inspecting, verifying, and converting TSET shards"
+homepage.workspace = true
+documentation = "https://github.com/humancto/tset/tree/main/crates/tset-cli"
+readme = "README.md"
+keywords = ["llm", "training-data", "merkle-tree", "cli", "audit"]
+categories = ["command-line-utilities", "encoding"]
+rust-version.workspace = true
+description = "Command-line tool for inspecting, verifying, and converting TSET shards (the receipts layer for LLM training data)."
 
 [[bin]]
 name = "tset"
 path = "src/main.rs"
 
 [dependencies]
-tset-core = { path = "../tset-core" }
+# Internal path dep also carries a version so `cargo publish` accepts it
+# without falling back to crates.io for local builds.
+tset-core = { path = "../tset-core", version = "0.3.2" }
 serde_json = { workspace = true }
 hex = { workspace = true }
 

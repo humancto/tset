@@ -1,0 +1,137 @@
+# Releasing TSET
+
+This is the maintainer recipe for cutting a release. The release workflow
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) does
+everything once a `v*` tag is pushed; this doc covers the prep, the tag
+push, and the post-release smoke test.
+
+## What gets released
+
+| Artifact | Where it lands | Trigger |
+|---|---|---|
+| `tset-core` crate | <https://crates.io/crates/tset-core> | tag push |
+| `tset-cli` crate | <https://crates.io/crates/tset-cli> | tag push (after tset-core indexes) |
+| `tset-py` crate | <https://crates.io/crates/tset-py> | tag push (after tset-core indexes) |
+| `tset` Python wheel + sdist | <https://pypi.org/project/tset/> | tag push (after crates publish) |
+| GitHub Pages refresh | <https://humancto.github.io/tset/> | merge to `main` (independent) |
+
+## One-time setup
+
+Already configured (do not re-do):
+
+1. **GitHub Actions secret `CARGO_REGISTRY_TOKEN`** — token from
+   <https://crates.io/settings/tokens> with the `publish-update` scope
+   for the three crate names.
+2. **PyPI Trusted Publishing** — go to
+   <https://pypi.org/manage/project/tset/settings/publishing/> and
+   register this repo's `release.yml` workflow as a trusted publisher.
+   No API token needed; OIDC handles it.
+3. **GitHub environment `pypi`** — repo Settings → Environments → `pypi`
+   exists. Optionally require a maintainer reviewer before any deploy.
+
+## Cutting a release
+
+### 1. Pick the version
+
+Crate version tracks the binary format version: a v0.3.x crate
+implements the v0.3.x wire format. Patch component is reserved for
+implementation fixes that do **not** change the wire format.
+
+| Change | Bump |
+|---|---|
+| Wire format change (new section, new manifest field) | minor (0.3.2 → 0.4.0) |
+| Implementation fix, same wire format | patch (0.3.2 → 0.3.3) |
+| Breaking API change in `tset-core` Rust API but no wire change | patch + note in CHANGELOG |
+
+### 2. Update versions in lockstep
+
+The workspace version + the Python package version must match:
+
+- `Cargo.toml` → `[workspace.package].version`
+- `python/pyproject.toml` → `[project].version`
+- `crates/tset-cli/Cargo.toml` → `tset-core = { path = ..., version = "<X>" }`
+- `crates/tset-py/Cargo.toml`  → `tset-core = { path = ..., version = "<X>" }`
+
+`make check-versions` (TODO) or simply:
+
+```bash
+grep -E '^version = "' Cargo.toml python/pyproject.toml \
+    crates/tset-cli/Cargo.toml crates/tset-py/Cargo.toml
+```
+
+All four must show the same version string. The release workflow
+re-checks this in its `sanity` job and aborts if they disagree.
+
+### 3. Update the changelog
+
+Append a section to [`CHANGELOG.md`](CHANGELOG.md). Conventional shape:
+
+```markdown
+## v0.3.3 — 2026-04-30
+
+### Added
+…
+
+### Fixed
+…
+
+### Wire format
+- (none) | (changes)
+```
+
+### 4. Tag and push
+
+From the merge commit on `main`:
+
+```bash
+git tag -s v0.3.3 -m "v0.3.3"
+git push origin v0.3.3
+```
+
+The release workflow runs automatically. Watch
+<https://github.com/humancto/tset/actions> — six jobs:
+
+1. `sanity` — version match check.
+2. `crates-core` — publishes `tset-core`.
+3. `crates-downstream` (matrix) — waits for `tset-core` to index,
+   then publishes `tset-cli` and `tset-py` in parallel.
+4. `python-wheels` (matrix) — cibuildwheel across linux/macos/windows
+   x x86_64/arm64.
+5. `python-sdist` — pure source distribution.
+6. `python-publish` — uploads wheels + sdist to PyPI via Trusted
+   Publishing.
+
+Total time: ~25 minutes on green.
+
+### 5. Smoke test
+
+```bash
+# Crates
+cargo install tset-cli
+tset --version    # should print v0.3.3
+
+# Python
+python -m venv /tmp/tset-smoke && source /tmp/tset-smoke/bin/activate
+pip install tset==0.3.3
+python -c "import tset, tset_rs; print(tset.__version__)"
+```
+
+Both should report the new version. The Python smoke also confirms the
+Rust extension wheel was actually included in the install.
+
+## Recovering from a partial release
+
+If `crates-core` succeeds but a downstream fails (rate limit, transient
+crates.io error), do **not** retry the workflow blindly — `tset-core`
+is already published and re-publishing is rejected. Instead:
+
+1. Wait for the downstream failure to settle.
+2. From a fresh terminal, manually publish the missing crate:
+   ```bash
+   CARGO_REGISTRY_TOKEN=... cargo publish --manifest-path crates/tset-cli/Cargo.toml
+   ```
+3. Re-trigger only the Python jobs via `gh workflow run release.yml -f version=0.3.3`.
+
+For a full mis-release (wrong version tagged), [yank the bad
+versions](https://doc.rust-lang.org/cargo/reference/publishing.html#cargo-yank)
+on crates.io and PyPI, bump to the next patch, and re-tag.

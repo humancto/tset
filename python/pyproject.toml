@@ -1,14 +1,40 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
 
 [project]
 name = "tset"
-version = "0.1.0"
-description = "An open standard for LLM training data — verifiable, reusable, composable."
+version = "0.3.2"
+description = "TSET — open binary format for LLM training data: receipts you can verify."
 readme = "../README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.9"
+authors = [{ name = "TSET contributors" }]
+keywords = [
+    "llm",
+    "training-data",
+    "merkle-tree",
+    "tokenizer",
+    "blake3",
+    "compliance",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "blake3>=0.4",
     "zstandard>=0.22",
@@ -18,8 +44,28 @@ dependencies = [
 [project.optional-dependencies]
 parquet = ["pyarrow>=14"]
 torch = ["torch>=2.0"]
+hf = ["datasets>=2.14"]
 test = ["pytest>=7"]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["tset*"]
+[project.urls]
+Homepage = "https://humancto.github.io/tset/"
+Documentation = "https://humancto.github.io/tset/"
+Repository = "https://github.com/humancto/tset"
+Issues = "https://github.com/humancto/tset/issues"
+Changelog = "https://github.com/humancto/tset/blob/main/CHANGELOG.md"
+Showcase = "https://humancto.github.io/tset/showcase/"
+
+# ── maturin: build the PyO3 extension from crates/tset-py/ and package
+#    the pure-Python `tset` source tree alongside it. Mixed mode: the
+#    user sees a single `pip install tset` wheel.
+[tool.maturin]
+# Path is relative to this pyproject.toml (which lives at python/).
+manifest-path = "../crates/tset-py/Cargo.toml"
+# Pure-Python source root is "." (this directory). The actual package is
+# the sibling `tset/` directory; maturin auto-discovers it.
+python-source = "."
+# The Rust extension's Python module name is `tset_rs`. The pure-Python
+# `tset` package detects it at import time (see python/tset/reader.py).
+module-name = "tset_rs"
+features = ["pyo3/extension-module"]
+strip = true

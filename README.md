@@ -9,21 +9,47 @@
 **An open binary format for LLM training corpora.**
 Store text once. Tokenize many ways. Verify everywhere.
 
+[![Crates.io · tset-core](https://img.shields.io/crates/v/tset-core?label=crates.io%2Ftset-core&color=orange&logo=rust)](https://crates.io/crates/tset-core)
+[![Crates.io · tset-cli](https://img.shields.io/crates/v/tset-cli?label=crates.io%2Ftset-cli&color=orange&logo=rust)](https://crates.io/crates/tset-cli)
+[![PyPI](https://img.shields.io/pypi/v/tset?label=pypi%2Ftset&color=3776ab&logo=python&logoColor=white)](https://pypi.org/project/tset/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Format](https://img.shields.io/badge/format-v0.3.2-7dd3fc)](SPEC.md)
-[![Rust core](https://img.shields.io/badge/rust-core-orange?logo=rust)](crates/tset-core)
-[![Python](https://img.shields.io/badge/python-3.9%2B-3776ab?logo=python&logoColor=white)](python/)
-[![Tests](https://img.shields.io/badge/tests-42%20rust%20%C2%B7%20145%20py-success)](#status)
+[![Tests](https://img.shields.io/badge/tests-42%20rust%20%C2%B7%20145%20py%20%C2%B7%2027%20showcase-success)](#status)
 [![Clippy](https://img.shields.io/badge/clippy-0%20warnings-success)](#status)
 [![RFC](https://img.shields.io/badge/RFC-v0.4-a78bfa)](RFC.md)
 
 [**Website**](https://humancto.github.io/tset/) ·
+[**Showcase**](https://humancto.github.io/tset/showcase/) ·
 [**RFC**](RFC.md) ·
 [**Spec**](SPEC.md) ·
-[**Roadmap**](ROADMAP.md) ·
+[**SCALING**](examples/datasets/SCALING.md) ·
 [**Changelog**](CHANGELOG.md)
 
 </div>
+
+---
+
+## Install
+
+**Rust (the canonical implementation):**
+
+```bash
+# CLI binary
+cargo install tset-cli
+
+# Library
+cargo add tset-core
+```
+
+**Python (auto-includes the prebuilt Rust wheel):**
+
+```bash
+pip install tset
+```
+
+The Python package ships the same Rust core as a precompiled wheel
+(via `tset-py`) and falls back to a pure-Python reference impl when
+the wheel isn't available. One install command, native speed by default.
 
 ---
 
@@ -71,11 +97,16 @@ Full normative layout: [SPEC.md](SPEC.md). Design pitch: [RFC.md](RFC.md).
 ### Python
 
 ```bash
-pip install -e python/
+pip install tset            # ships the Rust wheel as `tset_rs`; native speed by default
+```
 
-# Optional: install the Rust wheel for ~3× streaming speedup at scale
-cd crates/tset-py && maturin build --release && \
-  pip install --force-reinstall ../../target/wheels/tset_rs-*.whl
+For a development install from source:
+
+```bash
+git clone https://github.com/humancto/tset && cd tset
+pip install maturin
+maturin develop --manifest-path crates/tset-py/Cargo.toml
+pip install -e python/
 ```
 
 ```python
