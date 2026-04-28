@@ -167,6 +167,58 @@ def _bench_tset_minimal(jsonl_path: Path) -> dict:
     return {"size": size, "write_seconds": m_w.seconds}
 
 
+def _bench_tset_with_sections(jsonl_path: Path) -> dict:
+    """Build a separate shard with v0.3.2 binary sections enabled and
+    benchmark THAT, so the "+ sections" row reflects reality.
+
+    This is what Codex flagged on the original bench.py: the row was
+    labelled "2 views + sections" but read from the no-sections shard
+    produced by ``tinyshakespeare/convert.py``. We now write a dedicated
+    shard with ``enable_binary_sections()`` for this row.
+    """
+    import json
+
+    from tset.reader import Reader
+    from tset.tokenizers import ByteLevelTokenizer, WhitespaceTokenizer
+    from tset.writer import Writer
+
+    sections_path = OUT_DIR / "corpus.with_sections.tset"
+    if sections_path.exists():
+        sections_path.unlink()
+
+    with measure("tset write (2 views + sections)") as m_w:
+        with Writer(str(sections_path)) as w:
+            w.enable_binary_sections()
+            with jsonl_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    rec = json.loads(line)
+                    w.add_document(rec["text"], metadata={"id": rec.get("id")})
+            w.add_tokenizer_view(ByteLevelTokenizer())
+            w.add_tokenizer_view(WhitespaceTokenizer(vocab_size=4096))
+
+    size = sections_path.stat().st_size
+    r = Reader(str(sections_path))
+    with measure("tset doc-store read (with sections)") as m_doc:
+        n = 0
+        h = hashlib.blake2b(digest_size=16)
+        for _doc_hash, content in r.documents():
+            h.update(content)
+            n += 1
+    with measure("tset stream tokens (with sections)") as m_tok:
+        total_tokens = 0
+        for tokens, _ in r.stream_tokens("byte-level-v1", batch_size=4096):
+            total_tokens += int(tokens.size)
+    return {
+        "size": size,
+        "documents": n,
+        "write_seconds": m_w.seconds,
+        "doc_read_seconds": m_doc.seconds,
+        "doc_checksum": h.hexdigest(),
+        "token_stream_seconds": m_tok.seconds,
+        "tokens_streamed": total_tokens,
+    }
+
+
 def main() -> int:
     if not TSET.exists():
         print(f"error: {TSET} not found — run convert.py first", file=sys.stderr)
@@ -181,7 +233,13 @@ def main() -> int:
         "jsonl_zstd": _bench_jsonl_zstd(JSONL),
         "parquet": _bench_parquet(JSONL),
         "tset_minimal_1view": _bench_tset_minimal(JSONL),
-        "tset_full_2views_sections": _bench_tset_full(TSET),
+        # The shard at TSET (from convert.py) is "2 views, no sections" —
+        # convert.py deliberately leaves sections off because they bloat
+        # in v0.3.2. We benchmark it as its own row, then build a
+        # separate shard with sections actually enabled for the
+        # "with sections" row so labels and data agree.
+        "tset_2views_no_sections": _bench_tset_full(TSET),
+        "tset_2views_with_sections": _bench_tset_with_sections(JSONL),
     }
     payload = {
         "dataset": "tinyshakespeare",
@@ -201,12 +259,13 @@ def main() -> int:
     )
     base = rows["jsonl"]["size"]
     for label, key, note in [
-        ("Raw text",                  "raw_text",                  "no record structure"),
-        ("JSONL",                     "jsonl",                     "baseline"),
-        ("JSONL + zstd",              "jsonl_zstd",                "compressed text"),
-        ("Parquet (zstd)",            "parquet",                   "columnar"),
-        ("TSET · 1 view",             "tset_minimal_1view",        "no binary sections"),
-        ("TSET · 2 views + sections", "tset_full_2views_sections", "full receipts"),
+        ("Raw text",                       "raw_text",                  "no record structure"),
+        ("JSONL",                          "jsonl",                     "baseline"),
+        ("JSONL + zstd",                   "jsonl_zstd",                "compressed text"),
+        ("Parquet (zstd)",                 "parquet",                   "columnar"),
+        ("TSET · 1 view",                  "tset_minimal_1view",        "no binary sections"),
+        ("TSET · 2 views, no sections",    "tset_2views_no_sections",   "lean prod config"),
+        ("TSET · 2 views + sections",      "tset_2views_with_sections", "v0.3.2 sections enabled"),
     ]:
         r = rows[key]
         if r.get("skipped"):

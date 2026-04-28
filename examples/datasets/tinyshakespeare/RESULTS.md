@@ -24,13 +24,21 @@ percent; sizes are deterministic.
 | JSONL | 1.5 MB | 1.00× | baseline |
 | JSONL + zstd | 495 KB | 0.32× | compressed text |
 | Parquet (zstd) | 536 KB | 0.34× | columnar |
-| TSET · 1 view, no sections | 6.2 MB | 4.05× | ByteLevelTokenizer only |
-| TSET · 2 views + sections | 7.5 MB | 4.91× | full receipts |
+| TSET · 1 view | 6.2 MB | 4.05× | ByteLevelTokenizer only, no sections |
+| TSET · 2 views, no sections | 7.5 MB | 4.91× | lean prod config (what `convert.py` writes) |
+| TSET · 2 views + sections | 10.6 MB | 6.92× | v0.3.2 sections enabled — **bloat from inline duplication, see SCALING.md** |
 
 > TSET is **larger** than text-only formats because it embeds pre-computed
 > tokenizations and Merkle structures in the same file. The fair
 > comparison is "JSONL + tokenizer cache + audit metadata", not raw JSONL
 > alone — which is exactly what TSET unifies into one binary.
+>
+> The "+ sections" row is bigger than the "no sections" row even though
+> the same capabilities are present in both. That's a v0.3.2 transitional
+> state: enabling binary sections writes TSMT/TLOG/TCOL on disk **in
+> addition to** keeping the inline JSON forms in the manifest. v0.4 will
+> drop the inline forms; the sections row will then be the smaller one.
+> See `examples/datasets/SCALING.md` for the full breakdown.
 
 ## Read throughput (decode every document)
 

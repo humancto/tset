@@ -28,13 +28,23 @@ if _PYTHON not in sys.path:
 
 
 def _try_or_skip_network(callable_):
-    """Run ``callable_`` and skip the test on a network/DNS failure.
+    """Run ``callable_`` and skip the test only on transport-level failures.
 
-    Anything else (a hash mismatch, an ImportError) is a real test
-    failure and propagates.
+    A 404/403 from the upstream (HTTPError) is a real regression — the
+    dataset URL or its ETag has moved — so we let it propagate as a
+    test failure. We only skip when the network itself is unreachable:
+    DNS lookup failure, connection refused/reset, timeout, sandbox host
+    block, etc. ``urllib.error.HTTPError`` inherits from URLError and
+    must be checked first because of that.
+
+    Hash mismatches in ``cache.fetch`` raise ValueError and propagate
+    unconditionally — those are real integrity failures.
     """
     try:
         return callable_()
+    except urllib.error.HTTPError:
+        # Real HTTP-status failure: 404/403/5xx. Don't mask it.
+        raise
     except urllib.error.URLError as e:
         pytest.skip(f"network unavailable for showcase fetch: {e}")
     except OSError as e:

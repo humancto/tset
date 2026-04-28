@@ -21,6 +21,9 @@ def click_corpus(tmp_path_factory):
 
     try:
         dl.fetch_corpus()
+    except urllib.error.HTTPError:
+        # Real 4xx/5xx — let the test fail so a moved URL surfaces.
+        raise
     except (urllib.error.URLError, OSError) as e:
         pytest.skip(f"network unavailable: {e}")
 
