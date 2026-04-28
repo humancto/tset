@@ -30,17 +30,49 @@ production readiness.
 | 23 | T4 | tset-bench D (compliance) + E (exclusion workflow) | ✅ atomic c0c1078 |
 | 24 | T4 | Multi-modal extensions sketch | ✅ atomic 848a92f (SPEC §10, design under review) |
 
-## Score (post atomic deba412)
+## Score (final)
 
-**24 of 24 items closed in code.** All four tiers done:
+**24 of 24 production-grade items closed**, plus a follow-on round of
+ultra-polish atomics on top:
+
 - **Tier 1** (production correctness): 6/6
 - **Tier 2** (real features): 7/7
 - **Tier 3** (robustness): 7/7
 - **Tier 4** (polish): 4/4
 
-Test totals: **42 Rust** (39 unit + 3 integration suites) + **132 Python**
-(124 + 4 skipped + new delegation tests). All stable, all on `main`,
-all pushed.
+### Bonus closures (after the 24 above)
+
+| Item | Commit |
+|---|---|
+| v0.3.2 conformance fixture (binary sections enabled) committed + byte-stable rebuild test | `7ff231d` |
+| Reader::open eagerly verifies on-disk TSMT/TLOG/TCOL content_hashes; tampered sections rejected | `4fc23e1` |
+| `tset convert jsonl --binary-sections` flag + `tset inspect` shows section pointers + signing pubkey | `40e7a0a` |
+| PyO3 bindings: `Reader.on_disk_smt/audit_log/columns` + `Writer.enable_binary_sections` | `767adf3` |
+| `cargo clippy --workspace --all-targets` is **zero warnings** | `b167240` |
+| `cargo fmt --all -- --check` passes | `3633b4f` |
+
+### Test totals (final)
+
+- **42 Rust suites**: 39 unit + 9 integration (binary_sections grew to 7
+  with the tamper tests, plus malformed/conformance/object_store/
+  roundtrip/CLI)
+- **145 Python tests** + 4 skipped (HF/torch deps not installed in CI)
+- All stable, all on `main`, all pushed
+- Clippy clean, fmt clean — CI green on first run
+
+### Format version history
+
+- v0.1 — initial reference impl
+- v0.2 — per-chunk content_hash mandatory
+- v0.3 — bit-packed token IDs (16-bit fast path)
+- v0.3.1 — Ed25519 audit-log signing (additive optional)
+- v0.3.2 — opt-in TSMT/TLOG/TCOL on-disk sections (additive optional);
+  Reader proactively verifies section content_hashes at open time
+- v0.4 (planned) — on-disk sections become mandatory; in-manifest
+  forms can be dropped
+
+Conformance fixtures lock all of v0.1, v0.3, and v0.3.2 against
+silent wire-format drift.
 
 ## What's still genuinely deferred (not closed)
 
