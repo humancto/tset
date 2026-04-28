@@ -498,12 +498,13 @@ r = <span class="tok-fn">Reader</span>(<span class="tok-s">"corpus.tset"</span>)
     <span class="tok-fn">train_step</span>(tokens)  <span class="tok-c"># numpy uint32 batch + the source doc_hash</span>
 
 <span class="tok-c"># Generate a non-inclusion proof for a deletion request</span>
-proof = r.<span class="tok-fn">prove_non_inclusion</span>(doc_hash=<span class="tok-fn">bytes</span>.<span class="tok-fn">fromhex</span>(<span class="tok-s">"a55d…"</span>))
-<span class="tok-fn">verify_against</span>(proof, root=r.<span class="tok-fn">shard_merkle_root</span>())  <span class="tok-c"># True</span></code></pre>
+absent = <span class="tok-fn">bytes</span>.<span class="tok-fn">fromhex</span>(<span class="tok-s">"a55d" + "00" * 30</span>)
+proof  = r.<span class="tok-fn">prove_non_inclusion</span>(absent)
+<span class="tok-k">assert</span> proof.<span class="tok-fn">verify</span>(r.<span class="tok-fn">smt_root</span>())  <span class="tok-c"># True — root comes from the v0.3.2 TSMT section</span></code></pre>
       </div>
 
       <div class="code-pane" data-pane="rs">
-<pre><code><span class="tok-k">use</span> tset_core::{Reader, Writer};
+<pre><code><span class="tok-k">use</span> tset_core::{Reader, Writer, Dataset};
 <span class="tok-k">use</span> tset_core::tokenizers::ByteLevelTokenizer;
 
 <span class="tok-k">let mut</span> w = Writer::<span class="tok-fn">create</span>(<span class="tok-s">"corpus.tset"</span>, <span class="tok-k">None</span>);
@@ -516,11 +517,15 @@ w.<span class="tok-fn">close</span>()?;
 <span class="tok-k">let</span> view = r.<span class="tok-fn">open_view</span>(<span class="tok-s">"byte-level-v1"</span>)?;
 <span class="tok-k">for</span> (tokens, doc_hash) <span class="tok-k">in</span> view.<span class="tok-fn">iter_per_doc</span>()? {
     <span class="tok-c">// tokens: Vec&lt;u32&gt;, doc_hash: [u8; 32]</span>
+    <span class="tok-fn">train_step</span>(&tokens, &doc_hash);
 }
 
-<span class="tok-c">// Cryptographic proof that a doc is NOT in the shard</span>
-<span class="tok-k">let</span> proof = r.<span class="tok-fn">prove_non_inclusion</span>(&doc_hash)?;
-proof.<span class="tok-fn">verify</span>(r.<span class="tok-fn">shard_merkle_root</span>())?;</code></pre>
+<span class="tok-k">let</span> root = r.<span class="tok-fn">smt_root</span>();  <span class="tok-c">// 32-byte SMT root from the TSMT section</span>
+
+<span class="tok-c">// Dataset-level non-inclusion proof (RTBF receipt)</span>
+<span class="tok-k">let</span> ds     = Dataset::<span class="tok-fn">open</span>(<span class="tok-s">"my-corpus.tset/"</span>)?;
+<span class="tok-k">let</span> absent: [<span class="tok-ty">u8</span>; <span class="tok-n">32</span>] = [<span class="tok-n">0xa5</span>; <span class="tok-n">32</span>];
+<span class="tok-k">let</span> bundle = ds.<span class="tok-fn">prove_non_inclusion</span>(&absent)?;  <span class="tok-c">// serde_json::Value proof bundle</span></code></pre>
       </div>
     </div>
   </div>
