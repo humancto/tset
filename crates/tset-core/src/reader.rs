@@ -244,6 +244,23 @@ impl Reader {
         // view, rebuild a tokenizer from its config and re-tokenize the
         // test_vector documents, asserting the byte hash matches.
         //
+        // On-disk binary sections (v0.3.2): eagerly verify each
+        // section's content_hash. The decode functions return
+        // BadManifest("...content_hash mismatch") for any tamper.
+        // Reader::open thus rejects shards with corrupted TSMT/TLOG/TCOL
+        // bodies, the same way strict-v0.2 rejects chunks without
+        // content_hash. Verification is a single-section decode; the
+        // section bytes remain mmapped, no extra allocation.
+        if let Err(e) = self.on_disk_smt() {
+            return Err(e);
+        }
+        if let Err(e) = self.on_disk_audit_log() {
+            return Err(e);
+        }
+        if let Err(e) = self.on_disk_columns() {
+            return Err(e);
+        }
+
         // `skip_reproducibility` short-circuits this — only sound on a
         // hot streaming open of a shard the caller has already verified.
         if skip_reproducibility {

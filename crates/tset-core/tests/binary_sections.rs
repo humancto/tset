@@ -96,6 +96,96 @@ fn reader_returns_none_for_on_disk_sections_when_absent() {
 }
 
 #[test]
+fn reader_rejects_tampered_tsmt_section_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tampered.tset");
+    let mut w = Writer::create(&path, None);
+    w.enable_binary_sections();
+    w.add_document(b"alpha").unwrap();
+    w.add_document(b"beta").unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+
+    // Locate the TSMT section's payload in the file. The keys array
+    // sits at section_offset + TSMT_HEADER_SIZE (80). Flip a byte there.
+    let r = Reader::open(&path).unwrap();
+    let smt_section = r.manifest().raw().get("smt_section").unwrap();
+    let off = smt_section["offset"].as_u64().unwrap() as usize;
+    let target = off + 80; // first byte of first key
+    drop(r);
+
+    let mut data = std::fs::read(&path).unwrap();
+    data[target] ^= 0xff;
+    std::fs::write(&path, &data).unwrap();
+
+    let err = Reader::open(&path).err().unwrap();
+    assert!(
+        matches!(err, tset_core::TsetError::BadManifest(s) if s.contains("TSMT") && s.contains("content_hash")),
+        "expected TSMT content_hash mismatch error",
+    );
+}
+
+#[test]
+fn reader_rejects_tampered_tlog_section_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tampered_tlog.tset");
+    let mut w = Writer::create(&path, None);
+    w.enable_binary_sections();
+    w.add_document(b"alpha").unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+
+    let r = Reader::open(&path).unwrap();
+    let tlog = r.manifest().raw().get("audit_log_section").unwrap();
+    let off = tlog["offset"].as_u64().unwrap() as usize;
+    // Flip a byte deep into the JSON payload (past the 80B header)
+    let target = off + 80 + 5;
+    drop(r);
+
+    let mut data = std::fs::read(&path).unwrap();
+    data[target] ^= 0xff;
+    std::fs::write(&path, &data).unwrap();
+
+    let err = Reader::open(&path).err().unwrap();
+    assert!(
+        matches!(err, tset_core::TsetError::BadManifest(s) if s.contains("TLOG") && s.contains("content_hash")),
+        "expected TLOG content_hash mismatch error",
+    );
+}
+
+#[test]
+fn reader_rejects_tampered_tcol_section_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tampered_tcol.tset");
+    let mut w = Writer::create(&path, None);
+    w.enable_binary_sections();
+    w.add_document_with_metadata(
+        b"alpha",
+        Some(&serde_json::json!({"lang": "en"}).as_object().unwrap().clone()),
+    )
+    .unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+
+    let r = Reader::open(&path).unwrap();
+    let tcol = r.manifest().raw().get("metadata_columns_section").unwrap();
+    let off = tcol["offset"].as_u64().unwrap() as usize;
+    // Past the 56B header
+    let target = off + 56 + 5;
+    drop(r);
+
+    let mut data = std::fs::read(&path).unwrap();
+    data[target] ^= 0xff;
+    std::fs::write(&path, &data).unwrap();
+
+    let err = Reader::open(&path).err().unwrap();
+    assert!(
+        matches!(err, tset_core::TsetError::BadManifest(s) if s.contains("TCOL") && s.contains("content_hash")),
+        "expected TCOL content_hash mismatch error",
+    );
+}
+
+#[test]
 fn writer_default_does_not_emit_binary_sections() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("plain.tset");
