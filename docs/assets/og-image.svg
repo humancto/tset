@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0d12"/>
+      <stop offset="1" stop-color="#141822"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.18" cy="0.0" r="0.55">
+      <stop offset="0" stop-color="#7dd3fc" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#7dd3fc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.95" cy="0.05" r="0.55">
+      <stop offset="0" stop-color="#a78bfa" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow1)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+
+  <!-- mark -->
+  <g transform="translate(80,80)">
+    <rect width="84" height="84" rx="18" fill="url(#brand)"/>
+    <path d="M22 32h40 M42 32v36" stroke="#0b0d12" stroke-width="7" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <text x="190" y="142" font-size="44" font-weight="700" fill="#e6e9f2" letter-spacing="0.04em">TSET</text>
+  <text x="190" y="172" font-size="18" font-weight="500" fill="#9aa3b8" letter-spacing="0.06em">v0.3.2 · MIT</text>
+
+  <!-- headline -->
+  <text x="80" y="320" font-size="70" font-weight="800" fill="#e6e9f2" letter-spacing="-0.02em">Training data your model</text>
+  <text x="80" y="400" font-size="70" font-weight="800" letter-spacing="-0.02em">
+    <tspan fill="#e6e9f2">can </tspan><tspan fill="url(#brand)">prove</tspan><tspan fill="#e6e9f2"> it actually saw.</tspan>
+  </text>
+
+  <!-- sub -->
+  <text x="80" y="465" font-size="24" fill="#9aa3b8">An open binary format for LLM training corpora.</text>
+  <text x="80" y="498" font-size="24" fill="#9aa3b8">Store text once. Tokenize many ways. Verify everywhere.</text>
+
+  <!-- chips -->
+  <g font-size="18" font-weight="600" fill="#e6e9f2">
+    <g transform="translate(80,548)">
+      <rect width="180" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
+      <text x="90" y="27" text-anchor="middle">BLAKE3</text>
+    </g>
+    <g transform="translate(272,548)">
+      <rect width="220" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
+      <text x="110" y="27" text-anchor="middle">Sparse Merkle Tree</text>
+    </g>
+    <g transform="translate(504,548)">
+      <rect width="200" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
+      <text x="100" y="27" text-anchor="middle">Ed25519 audit log</text>
+    </g>
+    <g transform="translate(716,548)">
+      <rect width="240" height="42" rx="21" fill="#141822" stroke="#1f2533"/>
+      <text x="120" y="27" text-anchor="middle">Rust core + PyO3</text>
+    </g>
+  </g>
+
+  <!-- corner url -->
+  <text x="1120" y="600" text-anchor="end" font-size="18" fill="#9aa3b8" letter-spacing="0.04em">github.com/humancto/tset</text>
+</svg>
