@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+
+  <title>TSET — verifiable, reusable, composable training data for LLMs</title>
+  <meta name="description" content="TSET is an open binary format for LLM training data: store text once, tokenize many ways, prove every token, honor every exclusion. Rust core + Python bindings. v0.3.2." />
+  <link rel="canonical" href="https://humancto.github.io/tset/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="TSET" />
+  <meta property="og:title" content="TSET — verifiable, reusable, composable training data for LLMs" />
+  <meta property="og:description" content="An open binary format for LLM training data: store text once, tokenize many ways, prove every token, honor every exclusion. Rust core + Python bindings." />
+  <meta property="og:url" content="https://humancto.github.io/tset/" />
+  <meta property="og:image" content="https://humancto.github.io/tset/assets/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="TSET — open binary format for LLM training data" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="TSET — verifiable, reusable, composable training data for LLMs" />
+  <meta name="twitter:description" content="Open binary format for LLM training data with provenance, multi-tokenizer views, Merkle commitments, and compliance proofs." />
+  <meta name="twitter:image" content="https://humancto.github.io/tset/assets/og-image.png" />
+  <meta name="twitter:image:alt" content="TSET — open binary format for LLM training data" />
+
+  <!-- Geo metadata + geohash -->
+  <meta name="geo.region" content="US" />
+  <meta name="geo.placename" content="San Francisco, California" />
+  <meta name="geo.position" content="37.7749;-122.4194" />
+  <meta name="ICBM" content="37.7749, -122.4194" />
+  <!-- Geohash for 37.7749, -122.4194 (level 9) -->
+  <meta name="geohash" content="9q8yyk8ytp" />
+
+  <!-- App / search hints -->
+  <meta name="application-name" content="TSET" />
+  <meta name="keywords" content="LLM training data, dataset format, tokenizer, provenance, Merkle tree, content addressing, GDPR, compliance, AI Act, Rust, Python, BLAKE3, sparse merkle tree, training data lineage, dataset reproducibility, audit log, Ed25519" />
+  <meta name="author" content="TSET maintainers" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareSourceCode",
+        "name": "TSET",
+        "alternateName": "Tokenized Set",
+        "description": "An open binary format for LLM training data — verifiable, reusable, composable. Rust core, Python bindings, conformance suite.",
+        "codeRepository": "https://github.com/humancto/tset",
+        "programmingLanguage": ["Rust", "Python"],
+        "license": "https://opensource.org/licenses/MIT",
+        "url": "https://humancto.github.io/tset/",
+        "keywords": ["LLM", "training data", "dataset", "Merkle tree", "BLAKE3", "tokenizer", "provenance", "compliance"],
+        "version": "0.3.2"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "name": "TSET",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "url": "https://humancto.github.io/tset/",
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "5",
+          "ratingCount": "1",
+          "bestRating": "5"
+        }
+      }
+    ]
+  }
+  </script>
+
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="assets/favicon.svg" />
+
+  <link rel="apple-touch-icon" href="assets/favicon-192.png" />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+        <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#g)"/>
+        <path d="M8 11h16M16 11v13" stroke="#0b0d12" stroke-width="2.5" stroke-linecap="round"/>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+      </svg>
+      <span>TSET</span>
+      <span class="ver">v0.3.2</span>
+    </a>
+    <nav>
+      <a href="#what">What</a>
+      <a href="#how">How</a>
+      <a href="#code">Code</a>
+      <a href="#status">Status</a>
+      <a href="https://github.com/humancto/tset" rel="noopener">GitHub →</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="badge" aria-label="Build status">
+        <span class="dot"></span> 24 of 24 production-grade items closed
+      </div>
+      <h1>
+        Training data <span class="grad">your model can prove</span> it actually saw.
+      </h1>
+      <p class="sub">
+        TSET is an open binary format for LLM training corpora. Store text once,
+        tokenize many ways, bind the whole shard with a Merkle root, and honor
+        deletion requests across every conforming reader.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="#code">Get started</a>
+        <a class="btn ghost" href="https://github.com/humancto/tset" rel="noopener">View on GitHub</a>
+      </div>
+      <div class="meta-row">
+        <span><strong>BLAKE3</strong> content addressing</span>
+        <span><strong>Sparse Merkle</strong> proofs</span>
+        <span><strong>Ed25519</strong> signed audit log</span>
+        <span><strong>Rust core</strong> + Python bindings</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHY -->
+  <section id="what" class="section">
+    <div class="wrap">
+      <h2>Why a new format?</h2>
+      <p class="lede">
+        Training pipelines today juggle JSONL, Parquet, WebDataset, MDS, and a
+        dozen tokenizer caches — each with its own mental model for provenance.
+        TSET is one binary. One Merkle root. One source of truth for what every
+        token came from.
+      </p>
+      <div class="grid four">
+        <article class="card">
+          <h3>One copy of the text</h3>
+          <p>Documents are stored once, content-addressed by BLAKE3. New tokenizations are appended in place — no re-shuffling raw bytes.</p>
+        </article>
+        <article class="card">
+          <h3>Provenance you can prove</h3>
+          <p>Inclusion <em>and</em> non-inclusion proofs against a fixed-depth Sparse Merkle Tree. Every chunk carries its own content hash.</p>
+        </article>
+        <article class="card">
+          <h3>Compliance-shaped</h3>
+          <p>An exclusion overlay (binding into the dataset Merkle root) is honored by every conforming reader. The audit log is Ed25519-signed.</p>
+        </article>
+        <article class="card">
+          <h3>Reproducible by construction</h3>
+          <p>Re-tokenizing the same shard on the same code yields byte-identical chunks. Cross-impl conformance fixtures lock the wire format.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section id="how" class="section alt">
+    <div class="wrap">
+      <h2>How it&rsquo;s laid out</h2>
+      <p class="lede">
+        A TSET shard is a self-describing binary file. The header anchors a
+        Merkle root over the document store and every tokenization view; the
+        manifest at the tail is content-hashed back into the header.
+      </p>
+
+      <pre class="diagram"><code>┌─ MAGIC + version_minor ──────────────────────────────┐
+│  shard_merkle_root  ·  manifest_hash                 │
+├─ DOC STORE ──────────────────────────────────────────┤
+│  zstd-compressed blocks · per-doc BLAKE3 addressed   │
+├─ TOKENIZER VIEWS (one per view) ─────────────────────┤
+│  bit-packed token IDs · per-chunk content_hash       │
+├─ OPTIONAL on-disk sections (v0.3.2) ─────────────────┤
+│  TSMT  Sparse Merkle Tree                            │
+│  TLOG  Append-only audit log (Ed25519 signed)        │
+│  TCOL  Columnar metadata index                       │
+├─ MANIFEST (canonical JSON) ──────────────────────────┤
+│  document index · views · subsets · weights          │
+└─ FOOTER (mirrors header for tail-first verify) ──────┘</code></pre>
+
+      <div class="grid three">
+        <article class="card num"><span>01</span><h3>Write once</h3><p>The Writer streams documents to disk &mdash; no in-memory <code>doc_contents</code> pile-up.</p></article>
+        <article class="card num"><span>02</span><h3>Tokenize many ways</h3><p><code>append_tokenizer_view</code> bolts a new view onto an existing shard without rewriting the document store.</p></article>
+        <article class="card num"><span>03</span><h3>Verify everywhere</h3><p>Reader::open eagerly checks every section content-hash. Tampered bytes fail loudly at open.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- CODE -->
+  <section id="code" class="section">
+    <div class="wrap">
+      <h2>Show me the code</h2>
+
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="cli">CLI</button>
+        <button role="tab" aria-selected="false" data-tab="py">Python</button>
+        <button role="tab" aria-selected="false" data-tab="rs">Rust</button>
+      </div>
+
+      <pre class="code" data-pane="cli"><code><span class="c"># Convert a JSONL corpus to TSET, with on-disk binary sections</span>
+$ tset convert jsonl input.jsonl out.tset --binary-sections
+
+<span class="c"># Inspect the shard (header, manifest, signing pubkey, sections)</span>
+$ tset inspect out.tset
+
+<span class="c"># Full integrity check: manifest hash, footer, Merkle root,</span>
+<span class="c"># audit log signature, per-view reproducibility</span>
+$ tset verify out.tset</code></pre>
+
+      <pre class="code hidden" data-pane="py"><code><span class="k">from</span> tset <span class="k">import</span> Reader, Writer
+<span class="k">from</span> tset.tokenizers <span class="k">import</span> ByteLevelTokenizer, WhitespaceTokenizer
+
+<span class="k">with</span> Writer(<span class="s">"corpus.tset"</span>) <span class="k">as</span> w:
+    w.add_document(<span class="s">b"alpha document"</span>, metadata={<span class="s">"lang"</span>: <span class="s">"en"</span>})
+    w.add_document(<span class="s">b"beta"</span>, metadata={<span class="s">"lang"</span>: <span class="s">"fr"</span>})
+    w.add_subset(<span class="s">"english"</span>, <span class="s">"lang = 'en'"</span>, default_weight=<span class="n">0.7</span>)
+    w.add_tokenizer_view(ByteLevelTokenizer())
+    w.enable_binary_sections()  <span class="c"># opt-in v0.3.2 on-disk TSMT/TLOG/TCOL</span>
+
+r = Reader(<span class="s">"corpus.tset"</span>)
+<span class="k">for</span> tokens, doc_hash <span class="k">in</span> r.stream_tokens(<span class="s">"byte-level-v1"</span>, batch_size=<span class="n">1024</span>):
+    train_step(tokens)  <span class="c"># numpy uint32 batch + the source doc_hash</span></code></pre>
+
+      <pre class="code hidden" data-pane="rs"><code><span class="k">use</span> tset_core::{Reader, Writer};
+<span class="k">use</span> tset_core::tokenizers::ByteLevelTokenizer;
+
+<span class="k">let mut</span> w = Writer::create(<span class="s">"corpus.tset"</span>, <span class="k">None</span>);
+w.enable_binary_sections();
+w.add_document(<span class="s">b"alpha document"</span>)?;
+w.add_tokenizer_view(<span class="k">Box</span>::new(ByteLevelTokenizer))?;
+w.close()?;
+
+<span class="k">let</span> r = Reader::open(<span class="s">"corpus.tset"</span>)?;
+<span class="k">let</span> view = r.open_view(<span class="s">"byte-level-v1"</span>)?;
+<span class="k">for</span> (tokens, doc_hash) <span class="k">in</span> view.iter_per_doc()? {
+    <span class="c">// tokens: Vec&lt;u32&gt;, doc_hash: [u8; 32]</span>
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- STATUS -->
+  <section id="status" class="section alt">
+    <div class="wrap">
+      <h2>What ships in v0.3.2</h2>
+      <table class="status">
+        <thead><tr><th>Surface</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>RFC</td><td>v0.4 — public review</td></tr>
+          <tr><td>Binary spec</td><td>v0.3.2 (frozen body; v0.4 sections in queue)</td></tr>
+          <tr><td>Rust core (<code>tset-core</code>)</td><td>Reader · Writer · Dataset · ObjectStore · 39 unit + 9 integration tests</td></tr>
+          <tr><td>Python (<code>tset</code>)</td><td>Reference impl · 145 tests · auto-delegates hot paths to <code>tset_rs</code></td></tr>
+          <tr><td>PyO3 binding (<code>tset_rs</code>)</td><td>Reader · Writer · Dataset · DatasetWriter · on-disk section accessors</td></tr>
+          <tr><td>CLI (<code>tset</code>)</td><td><code>inspect</code> · <code>verify</code> · <code>convert jsonl --binary-sections</code></td></tr>
+          <tr><td>Provenance proofs</td><td>SMT inclusion + non-inclusion + dataset-overlay binding</td></tr>
+          <tr><td>Audit log</td><td>Ed25519-signed (additive optional, downgrade-attack rejected)</td></tr>
+          <tr><td>Conformance</td><td>v0.1, v0.3, v0.3.2 fixtures locked &mdash; both readers cross-verified</td></tr>
+          <tr><td>Lint</td><td><code>cargo clippy --all-targets</code> &mdash; zero warnings</td></tr>
+          <tr><td>License</td><td>MIT</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- HONESTY -->
+  <section class="section">
+    <div class="wrap narrow">
+      <h2>What this format is <em>not</em></h2>
+      <p>
+        TSET makes <strong>integrity</strong> claims, not <strong>authenticity</strong>
+        ones. It does not prove a document came from the URL recorded in
+        metadata, or that a model has &ldquo;forgotten&rdquo; any document. It
+        produces artifacts &mdash; non-inclusion proofs, Merkle commitments,
+        signed audit logs &mdash; that compliance workflows can use as inputs.
+        Whether your particular use satisfies GDPR Art. 17, the EU AI Act, or
+        any other regulation is for your counsel to determine.
+      </p>
+      <p>See <a href="https://github.com/humancto/tset/blob/main/RFC.md#57-what-tset-is-not">RFC §5.7</a> for the long version.</p>
+    </div>
+  </section>
+
+  <!-- CTA FOOTER -->
+  <section class="section cta-band">
+    <div class="wrap narrow center">
+      <h2>Ship a shard today.</h2>
+      <p>The Rust core and Python bindings are on GitHub under MIT. The conformance fixtures lock the wire format. Open an issue before you build on top.</p>
+      <div class="cta center">
+        <a class="btn primary" href="https://github.com/humancto/tset" rel="noopener">Star on GitHub</a>
+        <a class="btn ghost" href="https://github.com/humancto/tset/blob/main/SPEC.md" rel="noopener">Read the spec</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div>
+      <strong>TSET</strong> &middot; an open standard for LLM training data
+      <br/>
+      <small>MIT licensed &middot; v0.3.2 &middot; built in San Francisco</small>
+    </div>
+    <div class="links">
+      <a href="https://github.com/humancto/tset" rel="noopener">GitHub</a>
+      <a href="https://github.com/humancto/tset/blob/main/RFC.md" rel="noopener">RFC</a>
+      <a href="https://github.com/humancto/tset/blob/main/SPEC.md" rel="noopener">Spec</a>
+      <a href="https://github.com/humancto/tset/blob/main/CHANGELOG.md" rel="noopener">Changelog</a>
+      <a href="https://github.com/humancto/tset/issues" rel="noopener">Issues</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const tabs  = document.querySelectorAll('.tabs [role=tab]');
+  const panes = document.querySelectorAll('.code[data-pane]');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    const k = t.dataset.tab;
+    tabs.forEach(x => x.setAttribute('aria-selected', x === t));
+    panes.forEach(p => p.classList.toggle('hidden', p.dataset.pane !== k));
+  }));
+})();
+</script>
+
+</body>
+</html>
