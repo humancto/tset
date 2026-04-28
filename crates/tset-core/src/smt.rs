@@ -104,8 +104,7 @@ pub struct InclusionProof {
 
 impl InclusionProof {
     pub fn verify(&self, expected_root: &Hash) -> bool {
-        verify_path(&self.key, present_leaf(), &self.siblings)
-            .is_some_and(|r| &r == expected_root)
+        verify_path(&self.key, present_leaf(), &self.siblings).is_some_and(|r| &r == expected_root)
     }
 }
 
@@ -117,8 +116,7 @@ pub struct NonInclusionProof {
 
 impl NonInclusionProof {
     pub fn verify(&self, expected_root: &Hash) -> bool {
-        verify_path(&self.key, absent_leaf(), &self.siblings)
-            .is_some_and(|r| &r == expected_root)
+        verify_path(&self.key, absent_leaf(), &self.siblings).is_some_and(|r| &r == expected_root)
     }
 }
 

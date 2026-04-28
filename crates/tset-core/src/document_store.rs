@@ -121,8 +121,8 @@ impl<'a> DocumentStoreReader<'a> {
             return Err(TsetError::BadBlockMagic(magic));
         }
         let compressed = &self.file_bytes[header_end..payload_end];
-        let decompressed = zstd::stream::decode_all(compressed)
-            .map_err(|e| TsetError::Zstd(e.to_string()))?;
+        let decompressed =
+            zstd::stream::decode_all(compressed).map_err(|e| TsetError::Zstd(e.to_string()))?;
         if decompressed.len() as u64 != info.uncompressed_size {
             return Err(TsetError::ChunkUncompressedSizeMismatch);
         }
@@ -169,7 +169,8 @@ impl DocumentStoreWriter {
         }
         let in_block_offset = self.buffer.len() as u64;
         self.buffer.extend_from_slice(&h);
-        self.buffer.extend_from_slice(&(content.len() as u64).to_le_bytes());
+        self.buffer
+            .extend_from_slice(&(content.len() as u64).to_le_bytes());
         self.buffer.extend_from_slice(content);
         self.pending_locators
             .insert(h, (in_block_offset, content.len() as u64));

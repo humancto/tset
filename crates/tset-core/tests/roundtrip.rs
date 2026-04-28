@@ -23,7 +23,10 @@ fn rust_writer_then_rust_reader_full_roundtrip() {
     w.close().unwrap();
 
     let r = Reader::open(&path).unwrap();
-    assert_eq!(r.tokenizer_ids().unwrap(), vec!["byte-level-v1".to_string()]);
+    assert_eq!(
+        r.tokenizer_ids().unwrap(),
+        vec!["byte-level-v1".to_string()]
+    );
     let total = r.view_total_tokens("byte-level-v1").unwrap();
     let expected: u64 = docs.iter().map(|d| d.len() as u64).sum();
     assert_eq!(total, expected);

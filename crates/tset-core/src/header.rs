@@ -93,7 +93,10 @@ mod tests {
     fn rejects_bad_magic() {
         let mut buf = [0u8; HEADER_SIZE];
         buf[0..4].copy_from_slice(b"XXXX");
-        assert!(matches!(Header::decode(&buf), Err(TsetError::BadHeaderMagic(_))));
+        assert!(matches!(
+            Header::decode(&buf),
+            Err(TsetError::BadHeaderMagic(_))
+        ));
     }
 
     #[test]
@@ -109,7 +112,10 @@ mod tests {
         };
         let mut enc = h.encode();
         enc[8..12].copy_from_slice(&1u32.to_le_bytes());
-        assert!(matches!(Header::decode(&enc), Err(TsetError::UnexpectedFlags(1))));
+        assert!(matches!(
+            Header::decode(&enc),
+            Err(TsetError::UnexpectedFlags(1))
+        ));
     }
 
     #[test]

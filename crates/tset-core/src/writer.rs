@@ -17,7 +17,9 @@ use serde_json::{json, Map, Value};
 
 use crate::audit_log::AuditLog;
 use crate::columns::MetadataColumns;
-use crate::constants::{HASH_SIZE, HEADER_SIZE, TRUNCATED_HASH_SIZE, VERSION_MAJOR, VERSION_MINOR, MAGIC_DOC_BLOCK};
+use crate::constants::{
+    HASH_SIZE, HEADER_SIZE, MAGIC_DOC_BLOCK, TRUNCATED_HASH_SIZE, VERSION_MAJOR, VERSION_MINOR,
+};
 use crate::document_store::{BlockInfo, DocumentLocator, DocumentStoreWriter};
 use crate::error::{TsetError, TsetResult};
 use crate::footer::Footer;
@@ -25,9 +27,7 @@ use crate::hashing::{hash_bytes, shard_merkle_root, Hash};
 use crate::header::Header;
 use crate::mixture::Subset;
 use crate::smt::SparseMerkleTree;
-use crate::tokenizer_view::{
-    build_view, DEFAULT_SPARSE_INDEX_INTERVAL, DEFAULT_TOKEN_CHUNK_SIZE,
-};
+use crate::tokenizer_view::{build_view, DEFAULT_SPARSE_INDEX_INTERVAL, DEFAULT_TOKEN_CHUNK_SIZE};
 use crate::tokenizers::{canonical_json, Tokenizer};
 
 pub struct Writer {
@@ -177,7 +177,10 @@ impl Writer {
         } = self;
 
         let mut manifest = Map::new();
-        manifest.insert("version".into(), json!(format!("{VERSION_MAJOR}.{VERSION_MINOR}.0")));
+        manifest.insert(
+            "version".into(),
+            json!(format!("{VERSION_MAJOR}.{VERSION_MINOR}.0")),
+        );
         manifest.insert("shard_id".into(), json!(shard_id));
         manifest.insert(
             "created_at".into(),
@@ -305,8 +308,7 @@ impl Writer {
                 "sparse_offset_index": sparse_json,
                 "test_vector": v.test_vector,
             });
-            manifest.get_mut("tokenization_views").unwrap()
-                [tokenizer.tokenizer_id()] = entry;
+            manifest.get_mut("tokenization_views").unwrap()[tokenizer.tokenizer_id()] = entry;
 
             audit.append(
                 "tokenizer_added",
@@ -343,7 +345,8 @@ impl Writer {
         );
         manifest.insert(
             "smt_present_keys".into(),
-            json!(smt.present_keys()
+            json!(smt
+                .present_keys()
                 .iter()
                 .map(hex::encode)
                 .collect::<Vec<_>>()),
@@ -561,11 +564,15 @@ fn read_doc_from_body(
     Ok(content)
 }
 
-fn decompress_block_from_body(body: &[u8], body_offset: u64, block: &BlockInfo) -> TsetResult<Vec<u8>> {
+fn decompress_block_from_body(
+    body: &[u8],
+    body_offset: u64,
+    block: &BlockInfo,
+) -> TsetResult<Vec<u8>> {
     let abs = block.offset as usize;
-    let body_relative = abs.checked_sub(body_offset as usize).ok_or(
-        TsetError::BadManifest("block.offset before body_offset"),
-    )?;
+    let body_relative = abs
+        .checked_sub(body_offset as usize)
+        .ok_or(TsetError::BadManifest("block.offset before body_offset"))?;
     if body_relative + BLOCK_HEADER_SIZE > body.len() {
         return Err(TsetError::BadManifest("block header exceeds body"));
     }
@@ -609,7 +616,10 @@ pub fn append_tokenizer_view<P: AsRef<Path>>(
     // Read existing shard state (manifest, doc list, ordered docs).
     let (mut manifest, ordered_docs, old_manifest_offset, header_v_minor) = {
         let r = CoreReader::open(&path)?;
-        if r.tokenizer_ids()?.iter().any(|t| t == tokenizer.tokenizer_id()) {
+        if r.tokenizer_ids()?
+            .iter()
+            .any(|t| t == tokenizer.tokenizer_id())
+        {
             return Err(TsetError::BadManifest(
                 "tokenizer_id already present in shard",
             ));
@@ -712,10 +722,7 @@ pub fn append_tokenizer_view<P: AsRef<Path>>(
     if let Some(audit_v) = manifest.get("audit_log") {
         if let Some(arr) = audit_v.get("entries").and_then(Value::as_array) {
             for e in arr {
-                let signature = e
-                    .get("signature")
-                    .and_then(Value::as_str)
-                    .map(String::from);
+                let signature = e.get("signature").and_then(Value::as_str).map(String::from);
                 audit.entries.push(crate::audit_log::AuditEntry {
                     seq: e.get("seq").and_then(Value::as_u64).unwrap_or(0),
                     timestamp: e.get("timestamp").and_then(Value::as_f64).unwrap_or(0.0),

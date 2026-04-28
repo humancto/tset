@@ -62,12 +62,14 @@ fn rust_reader_matches_conformance_invariants() {
         let sidecar = fixtures_dir().join(format!("{name}.expected.json"));
         let expected: Value = serde_json::from_slice(&std::fs::read(&sidecar).unwrap()).unwrap();
 
-        let r = Reader::open(&shard).unwrap_or_else(|e| {
-            panic!("conformance: failed to open {}: {}", shard.display(), e)
-        });
+        let r = Reader::open(&shard)
+            .unwrap_or_else(|e| panic!("conformance: failed to open {}: {}", shard.display(), e));
 
         let exp_minor = expected["version_minor"].as_u64().unwrap() as u8;
-        assert_eq!(r.header.version_minor, exp_minor, "version_minor for {name}");
+        assert_eq!(
+            r.header.version_minor, exp_minor,
+            "version_minor for {name}"
+        );
 
         assert_eq!(
             hex::encode(r.header.shard_merkle_root),
@@ -102,8 +104,11 @@ fn rust_reader_matches_conformance_invariants() {
         let exp_views = expected["tokenization_views"].as_object().unwrap();
         for (tid, exp) in exp_views {
             let total = r.view_total_tokens(tid).unwrap();
-            assert_eq!(total, exp["total_tokens"].as_u64().unwrap(),
-                "total_tokens {name}/{tid}");
+            assert_eq!(
+                total,
+                exp["total_tokens"].as_u64().unwrap(),
+                "total_tokens {name}/{tid}"
+            );
             let vocab = exp["vocab_size"].as_u64().unwrap();
             let view = r.manifest().view(tid).unwrap();
             assert_eq!(view["vocab_size"].as_u64().unwrap(), vocab);

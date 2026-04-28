@@ -23,27 +23,19 @@ fn bench_smt(c: &mut Criterion) {
         }
         let root = tree.root();
         let key = hash_bytes(&0u64.to_le_bytes());
-        group.bench_with_input(
-            BenchmarkId::new("prove_inclusion_n", n),
-            &n,
-            |b, _| {
-                b.iter(|| match tree.prove(&key) {
-                    Proof::Inclusion(p) => p.verify(&root),
-                    _ => false,
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("prove_inclusion_n", n), &n, |b, _| {
+            b.iter(|| match tree.prove(&key) {
+                Proof::Inclusion(p) => p.verify(&root),
+                _ => false,
+            });
+        });
         let absent = hash_bytes(b"not-present-doc");
-        group.bench_with_input(
-            BenchmarkId::new("prove_non_inclusion_n", n),
-            &n,
-            |b, _| {
-                b.iter(|| match tree.prove(&absent) {
-                    Proof::NonInclusion(p) => p.verify(&root),
-                    _ => false,
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("prove_non_inclusion_n", n), &n, |b, _| {
+            b.iter(|| match tree.prove(&absent) {
+                Proof::NonInclusion(p) => p.verify(&root),
+                _ => false,
+            });
+        });
     }
     group.finish();
 }

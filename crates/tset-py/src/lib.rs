@@ -16,9 +16,11 @@ use pyo3::types::{PyBytes, PyList};
 
 use tset_core::dataset::{Dataset as CoreDataset, DatasetWriter as CoreDatasetWriter};
 use tset_core::reader::Reader as CoreReader;
-use tset_core::signing::{AuditSigner, verify_signature};
+use tset_core::signing::{verify_signature, AuditSigner};
 use tset_core::tokenizers::{ByteLevelTokenizer, Tokenizer, WhitespaceTokenizer};
-use tset_core::writer::{append_tokenizer_view as core_append_tokenizer_view, Writer as CoreWriter};
+use tset_core::writer::{
+    append_tokenizer_view as core_append_tokenizer_view, Writer as CoreWriter,
+};
 use tset_core::TsetError;
 
 fn map_err(e: TsetError) -> PyErr {
@@ -45,10 +47,7 @@ fn tokens_to_le_bytes(tokens: &[u32]) -> std::borrow::Cow<'_, [u8]> {
         // because the spec requires little-endian on disk and the in-memory
         // u32 representation matches that byte-for-byte.
         let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(
-                tokens.as_ptr() as *const u8,
-                std::mem::size_of_val(tokens),
-            )
+            std::slice::from_raw_parts(tokens.as_ptr() as *const u8, std::mem::size_of_val(tokens))
         };
         std::borrow::Cow::Borrowed(bytes)
     }
@@ -151,7 +150,10 @@ impl PyReader {
     /// On-disk TSMT section. Returns None if the shard wasn't written
     /// with binary sections enabled. The dict carries: smt_root (32B
     /// bytes), num_present (int), present_keys (list of 32B bytes).
-    fn on_disk_smt<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, pyo3::types::PyDict>>> {
+    fn on_disk_smt<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, pyo3::types::PyDict>>> {
         let Some(section) = self.inner.on_disk_smt().map_err(map_err)? else {
             return Ok(None);
         };
@@ -313,7 +315,11 @@ fn verify_inclusion_proof(
         sh.copy_from_slice(&bytes);
         sibs.push(sh);
     }
-    Ok(tset_core::smt::InclusionProof { key: h, siblings: sibs }.verify(&root))
+    Ok(tset_core::smt::InclusionProof {
+        key: h,
+        siblings: sibs,
+    }
+    .verify(&root))
 }
 
 #[pyfunction]
@@ -338,7 +344,11 @@ fn verify_non_inclusion_proof(
         sh.copy_from_slice(&bytes);
         sibs.push(sh);
     }
-    Ok(tset_core::smt::NonInclusionProof { key: h, siblings: sibs }.verify(&root))
+    Ok(tset_core::smt::NonInclusionProof {
+        key: h,
+        siblings: sibs,
+    }
+    .verify(&root))
 }
 
 #[pyclass(name = "Writer", module = "tset._rs")]
@@ -351,11 +361,7 @@ pub struct PyWriter {
 impl PyWriter {
     #[new]
     #[pyo3(signature = (path, shard_id=None, signing_key=None))]
-    fn new(
-        path: &str,
-        shard_id: Option<String>,
-        signing_key: Option<&[u8]>,
-    ) -> PyResult<Self> {
+    fn new(path: &str, shard_id: Option<String>, signing_key: Option<&[u8]>) -> PyResult<Self> {
         let signer = match signing_key {
             None => None,
             Some(b) => Some(
@@ -412,12 +418,7 @@ impl PyWriter {
         Ok(())
     }
 
-    fn add_subset(
-        &mut self,
-        name: &str,
-        predicate: &str,
-        default_weight: f64,
-    ) -> PyResult<()> {
+    fn add_subset(&mut self, name: &str, predicate: &str, default_weight: f64) -> PyResult<()> {
         let w = self
             .inner
             .as_mut()
@@ -435,7 +436,9 @@ impl PyWriter {
             .ok_or_else(|| PyValueError::new_err("writer already closed"))?;
         let tok: Box<dyn Tokenizer> = match tokenizer_id {
             ByteLevelTokenizer::ID => Box::new(ByteLevelTokenizer),
-            WhitespaceTokenizer::ID => Box::new(WhitespaceTokenizer::new(vocab_size).map_err(map_err)?),
+            WhitespaceTokenizer::ID => {
+                Box::new(WhitespaceTokenizer::new(vocab_size).map_err(map_err)?)
+            }
             other => {
                 return Err(PyValueError::new_err(format!(
                     "unknown tokenizer_id: {other}"
@@ -612,10 +615,7 @@ fn generate_signing_key(py: Python<'_>) -> (Bound<'_, PyBytes>, Bound<'_, PyByte
 
 /// Compute the public key for an existing 32-byte secret.
 #[pyfunction]
-fn signing_public_key<'py>(
-    py: Python<'py>,
-    secret_bytes: &[u8],
-) -> PyResult<Bound<'py, PyBytes>> {
+fn signing_public_key<'py>(py: Python<'py>, secret_bytes: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
     let s = AuditSigner::from_secret_bytes(secret_bytes)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok(PyBytes::new_bound(py, &s.public_key_bytes()))
@@ -623,11 +623,7 @@ fn signing_public_key<'py>(
 
 /// Verify an Ed25519 signature against a public key + message.
 #[pyfunction]
-fn verify_audit_signature(
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-) -> bool {
+fn verify_audit_signature(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
     verify_signature(public_key, message, signature)
 }
 
@@ -654,7 +650,10 @@ fn shard_merkle_root_py<'py>(
         h.copy_from_slice(&l);
         arr.push(h);
     }
-    Ok(PyBytes::new_bound(py, &tset_core::hashing::shard_merkle_root(&arr)))
+    Ok(PyBytes::new_bound(
+        py,
+        &tset_core::hashing::shard_merkle_root(&arr),
+    ))
 }
 
 /// merkle_root over a list of leaves IN GIVEN ORDER (no sort). Mirrors
@@ -673,7 +672,10 @@ fn merkle_root_unsorted_py<'py>(
         h.copy_from_slice(&l);
         arr.push(h);
     }
-    Ok(PyBytes::new_bound(py, &tset_core::hashing::merkle_root_unsorted(&arr)))
+    Ok(PyBytes::new_bound(
+        py,
+        &tset_core::hashing::merkle_root_unsorted(&arr),
+    ))
 }
 
 /// Append a new tokenization view to an existing TSET shard, in-place.
@@ -682,9 +684,7 @@ fn merkle_root_unsorted_py<'py>(
 fn append_tokenizer_view(path: &str, tokenizer_id: &str, vocab_size: u32) -> PyResult<()> {
     let tok: Box<dyn Tokenizer> = match tokenizer_id {
         ByteLevelTokenizer::ID => Box::new(ByteLevelTokenizer),
-        WhitespaceTokenizer::ID => Box::new(
-            WhitespaceTokenizer::new(vocab_size).map_err(map_err)?,
-        ),
+        WhitespaceTokenizer::ID => Box::new(WhitespaceTokenizer::new(vocab_size).map_err(map_err)?),
         other => {
             return Err(PyValueError::new_err(format!(
                 "unknown tokenizer_id: {other}"

@@ -62,11 +62,7 @@ impl AuditSigner {
     }
 }
 
-pub fn verify_signature(
-    public_key_bytes: &[u8],
-    message: &[u8],
-    signature_bytes: &[u8],
-) -> bool {
+pub fn verify_signature(public_key_bytes: &[u8], message: &[u8], signature_bytes: &[u8]) -> bool {
     if public_key_bytes.len() != PUBLIC_KEY_LEN || signature_bytes.len() != SIGNATURE_LEN {
         return false;
     }

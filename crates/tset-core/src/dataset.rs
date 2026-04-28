@@ -99,8 +99,8 @@ pub struct Dataset {
 impl Dataset {
     pub fn open<P: AsRef<Path>>(path: P) -> TsetResult<Self> {
         let root: PathBuf = path.as_ref().to_path_buf();
-        let single_file = root.is_file()
-            && root.extension().and_then(|s| s.to_str()) == Some("tset");
+        let single_file =
+            root.is_file() && root.extension().and_then(|s| s.to_str()) == Some("tset");
         if single_file {
             return Ok(Self {
                 shard_paths: vec![root.clone()],
@@ -208,18 +208,13 @@ impl Dataset {
 
     /// Locate a document across all shards (skipping excluded ones for
     /// inclusion proofs). Returns the shard path + InclusionProof.
-    pub fn prove_inclusion(
-        &self,
-        doc_hash: &Hash,
-    ) -> TsetResult<(PathBuf, InclusionProof)> {
+    pub fn prove_inclusion(&self, doc_hash: &Hash) -> TsetResult<(PathBuf, InclusionProof)> {
         let hex = hex::encode(doc_hash);
         for p in &self.shard_paths {
             let r = Reader::open(p)?;
             if r.has_document(doc_hash) {
                 if self.exclusions.contains(&hex) {
-                    return Err(TsetError::BadManifest(
-                        "document is dataset-level excluded",
-                    ));
+                    return Err(TsetError::BadManifest("document is dataset-level excluded"));
                 }
                 let smt = build_smt_from_reader(&r);
                 let proof = match smt.prove(doc_hash) {
@@ -557,9 +552,7 @@ pub(crate) fn format_snapshot_id(secs_since_epoch: f64) -> String {
     let m = (day_secs % 3600) / 60;
     let s = day_secs % 60;
     let (year, month, day) = civil_from_days(days);
-    format!(
-        "snapshot-{year:04}{month:02}{day:02}-{h:02}{m:02}{s:02}"
-    )
+    format!("snapshot-{year:04}{month:02}{day:02}-{h:02}{m:02}{s:02}")
 }
 
 /// Hinnant's "days_from_civil" inverse — returns (year, month, day).
@@ -568,8 +561,7 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = (z - era * 146_097) as u32; // [0, 146_096]
-    let yoe =
-        (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
     let y = (yoe as i64 + era * 400) as i32;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
     let mp = (5 * doy + 2) / 153; // [0, 11]

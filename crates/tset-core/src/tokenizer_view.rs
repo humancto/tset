@@ -91,7 +91,9 @@ pub fn read_chunk_with_bits(
         16 => 2usize,
         32 => 4usize,
         _other => {
-            return Err(TsetError::BadManifest("unsupported bits_per_token (must be 16 or 32 in v0.3)"))
+            return Err(TsetError::BadManifest(
+                "unsupported bits_per_token (must be 16 or 32 in v0.3)",
+            ))
         }
     };
     if raw.len() % bytes_per_token != 0 {
@@ -133,8 +135,8 @@ pub fn verify_view_header(
     expected_total_tokens: u64,
     expected_num_chunks: u64,
 ) -> TsetResult<()> {
-    let off = usize::try_from(view_offset)
-        .map_err(|_| TsetError::BadManifest("view_offset overflow"))?;
+    let off =
+        usize::try_from(view_offset).map_err(|_| TsetError::BadManifest("view_offset overflow"))?;
     let header_end = off
         .checked_add(crate::constants::VIEW_HEADER_SIZE)
         .ok_or(TsetError::BadManifest("view header range overflow"))?;
@@ -342,8 +344,7 @@ fn build_view_one<T: Tokenizer + ?Sized>(
     }
 
     let doc_lookup: std::collections::BTreeMap<Hash, Vec<u8>> = documents.iter().cloned().collect();
-    let test_vector =
-        crate::tokenizers::reproducibility_test_vector(tokenizer, &doc_lookup, 4);
+    let test_vector = crate::tokenizers::reproducibility_test_vector(tokenizer, &doc_lookup, 4);
 
     let config_hash = tokenizer.config_hash();
     let mut view_header = Vec::with_capacity(VIEW_HEADER_SIZE);

@@ -20,7 +20,10 @@ use tset_core::{Reader, Writer};
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("");
-    let rest: Vec<&str> = args[2.min(args.len())..].iter().map(String::as_str).collect();
+    let rest: Vec<&str> = args[2.min(args.len())..]
+        .iter()
+        .map(String::as_str)
+        .collect();
 
     let result = match cmd {
         "inspect" => cmd_inspect(&rest),
@@ -47,7 +50,10 @@ fn main() -> ExitCode {
 }
 
 fn print_usage() {
-    println!("tset {} — open standard for LLM training data\n", env!("CARGO_PKG_VERSION"));
+    println!(
+        "tset {} — open standard for LLM training data\n",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("USAGE:");
     println!("    tset inspect <path>");
     println!("    tset verify <path>");
@@ -59,11 +65,17 @@ fn cmd_inspect(args: &[&str]) -> Result<(), String> {
     let path = args.first().ok_or("inspect: missing <path>")?;
     let r = Reader::open(Path::new(path)).map_err(|e| e.to_string())?;
     println!("path:                {path}");
-    println!("version:             {}.{}", r.header.version_major, r.header.version_minor);
+    println!(
+        "version:             {}.{}",
+        r.header.version_major, r.header.version_minor
+    );
     if let Some(id) = r.shard_id() {
         println!("shard_id:            {id}");
     }
-    println!("shard_merkle_root:   {}", hex::encode(r.header.shard_merkle_root));
+    println!(
+        "shard_merkle_root:   {}",
+        hex::encode(r.header.shard_merkle_root)
+    );
     println!("manifest_offset:     {}", r.header.manifest_offset);
     println!("manifest_size:       {} bytes", r.header.manifest_size);
     let docs: Vec<_> = r.doc_hashes().collect();
@@ -78,7 +90,11 @@ fn cmd_inspect(args: &[&str]) -> Result<(), String> {
     // v0.3.2 on-disk binary sections (TSMT/TLOG/TCOL). Show pointers
     // when present.
     let mut section_lines: Vec<(&str, &serde_json::Value)> = Vec::new();
-    for key in ["smt_section", "audit_log_section", "metadata_columns_section"] {
+    for key in [
+        "smt_section",
+        "audit_log_section",
+        "metadata_columns_section",
+    ] {
         if let Some(v) = r.manifest().raw().get(key) {
             section_lines.push((key, v));
         }
@@ -112,7 +128,9 @@ fn cmd_convert(args: &[&str]) -> Result<(), String> {
     let kind = args.first().ok_or("convert: missing <format>")?;
     match *kind {
         "jsonl" => convert_jsonl(&args[1..]),
-        other => Err(format!("convert: unsupported format {other:?}; supported: jsonl")),
+        other => Err(format!(
+            "convert: unsupported format {other:?}; supported: jsonl"
+        )),
     }
 }
 
@@ -165,9 +183,7 @@ fn convert_jsonl(args: &[&str]) -> Result<(), String> {
             "--binary-sections" => {
                 // Boolean toggle — no value to consume
                 if inline_value.is_some() {
-                    return Err(
-                        "--binary-sections is a boolean flag; don't pass `=value`".into(),
-                    );
+                    return Err("--binary-sections is a boolean flag; don't pass `=value`".into());
                 }
                 binary_sections = true;
                 i += 1;
@@ -194,8 +210,7 @@ fn convert_jsonl(args: &[&str]) -> Result<(), String> {
             .get(&text_field)
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| format!("line {}: missing field {text_field:?}", lineno + 1))?;
-        w.add_document(text.as_bytes())
-            .map_err(|e| e.to_string())?;
+        w.add_document(text.as_bytes()).map_err(|e| e.to_string())?;
         count += 1;
     }
 

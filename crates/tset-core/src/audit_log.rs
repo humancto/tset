@@ -169,7 +169,10 @@ pub fn verify_audit_log(audit: &Value) -> bool {
             return false;
         }
 
-        let event_type = entry.get("event_type").and_then(Value::as_str).unwrap_or("");
+        let event_type = entry
+            .get("event_type")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let payload = entry.get("payload").cloned().unwrap_or(Value::Null);
         let timestamp = entry.get("timestamp").cloned().unwrap_or(Value::Null);
 
@@ -181,7 +184,10 @@ pub fn verify_audit_log(audit: &Value) -> bool {
         });
         let canonical = canonical_json(&entry_payload);
         let entry_hash = hash_bytes(canonical.as_bytes());
-        let stored_entry_hex = entry.get("entry_hash").and_then(Value::as_str).unwrap_or("");
+        let stored_entry_hex = entry
+            .get("entry_hash")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         if hex::encode(entry_hash) != stored_entry_hex {
             return false;
         }

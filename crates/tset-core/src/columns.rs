@@ -56,11 +56,10 @@ impl MetadataColumns {
             return Err(TsetError::BadManifest("unknown column logical type"));
         }
         if !self.columns.contains_key(name) {
-            self.columns.insert(
-                name.to_string(),
-                vec![Value::Null; self.row_count as usize],
-            );
-            self.types.insert(name.to_string(), logical_type.to_string());
+            self.columns
+                .insert(name.to_string(), vec![Value::Null; self.row_count as usize]);
+            self.types
+                .insert(name.to_string(), logical_type.to_string());
             self.insertion_order.push(name.to_string());
         }
         Ok(())
@@ -137,11 +136,28 @@ enum Op {
 
 #[derive(Debug)]
 enum Atom {
-    Cmp { col: String, op: Op, rhs: Value },
-    In { col: String, set: Vec<Value> },
-    Like { col: String, pattern: regex::Regex },
-    Between { col: String, low: Value, high: Value },
-    IsNull { col: String, negated: bool },
+    Cmp {
+        col: String,
+        op: Op,
+        rhs: Value,
+    },
+    In {
+        col: String,
+        set: Vec<Value>,
+    },
+    Like {
+        col: String,
+        pattern: regex::Regex,
+    },
+    Between {
+        col: String,
+        low: Value,
+        high: Value,
+    },
+    IsNull {
+        col: String,
+        negated: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -191,7 +207,11 @@ fn eval_atom(atom: &Atom, getter: &dyn Fn(&str) -> Value) -> bool {
         }
         Atom::IsNull { col, negated } => {
             let is_null = matches!(getter(col), Value::Null);
-            if *negated { !is_null } else { is_null }
+            if *negated {
+                !is_null
+            } else {
+                is_null
+            }
         }
         Atom::Cmp { col, op, rhs } => {
             let v = getter(col);
@@ -241,10 +261,7 @@ fn compare_lt(a: &Value, b: &Value) -> bool {
     }
 }
 
-pub fn compile_predicate(
-    expr: &str,
-    _types: &BTreeMap<String, String>,
-) -> TsetResult<Predicate> {
+pub fn compile_predicate(expr: &str, _types: &BTreeMap<String, String>) -> TsetResult<Predicate> {
     let tokens = tokenize(expr)?;
     let mut parser = Parser { tokens, pos: 0 };
     let root = parser.parse_or()?;
@@ -423,7 +440,10 @@ impl Parser {
             } else {
                 return Err(TsetError::BadManifest("expected NULL or NOT NULL after IS"));
             };
-            return Ok(Node::Atom(Atom::IsNull { col: ident, negated }));
+            return Ok(Node::Atom(Atom::IsNull {
+                col: ident,
+                negated,
+            }));
         }
         // <ident> BETWEEN <lit> AND <lit>
         if op_upper == "BETWEEN" {
@@ -433,7 +453,11 @@ impl Parser {
                 return Err(TsetError::BadManifest("expected AND in BETWEEN"));
             }
             let high = parse_literal(&self.eat()?)?;
-            return Ok(Node::Atom(Atom::Between { col: ident, low, high }));
+            return Ok(Node::Atom(Atom::Between {
+                col: ident,
+                low,
+                high,
+            }));
         }
         if op_upper == "IN" {
             if self.eat()? != "(" {
@@ -451,7 +475,10 @@ impl Parser {
                     return Err(TsetError::BadManifest("expected , or ) in IN list"));
                 }
             }
-            return Ok(Node::Atom(Atom::In { col: ident, set: values }));
+            return Ok(Node::Atom(Atom::In {
+                col: ident,
+                set: values,
+            }));
         }
         if op_upper == "LIKE" {
             let pat = self.eat()?;
@@ -470,7 +497,10 @@ impl Parser {
             re.push('$');
             let pattern = regex::Regex::new(&re)
                 .map_err(|_| TsetError::BadManifest("invalid LIKE pattern"))?;
-            return Ok(Node::Atom(Atom::Like { col: ident, pattern }));
+            return Ok(Node::Atom(Atom::Like {
+                col: ident,
+                pattern,
+            }));
         }
         let rhs_tok = self.eat()?;
         let rhs = parse_literal(&rhs_tok)?;
@@ -483,7 +513,11 @@ impl Parser {
             "<=" => Op::Lte,
             _ => return Err(TsetError::BadManifest("unknown operator")),
         };
-        Ok(Node::Atom(Atom::Cmp { col: ident, op: op_kind, rhs }))
+        Ok(Node::Atom(Atom::Cmp {
+            col: ident,
+            op: op_kind,
+            rhs,
+        }))
     }
 }
 
@@ -494,8 +528,7 @@ fn is_ident(s: &str) -> bool {
     let upper = s.to_ascii_uppercase();
     if matches!(
         upper.as_str(),
-        "AND" | "OR" | "NOT" | "IN" | "IS" | "LIKE" | "BETWEEN"
-            | "TRUE" | "FALSE" | "NULL"
+        "AND" | "OR" | "NOT" | "IN" | "IS" | "LIKE" | "BETWEEN" | "TRUE" | "FALSE" | "NULL"
     ) {
         return false;
     }

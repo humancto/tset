@@ -211,7 +211,9 @@ pub fn tokenizer_from_config(cfg: &Value) -> TsetResult<Box<dyn Tokenizer>> {
                 .and_then(Value::as_u64)
                 .ok_or(TsetError::BadManifest("tokenizer_config.vocab_size"))?;
             if vocab > u32::MAX as u64 {
-                return Err(TsetError::BadManifest("tokenizer_config.vocab_size > u32::MAX"));
+                return Err(TsetError::BadManifest(
+                    "tokenizer_config.vocab_size > u32::MAX",
+                ));
             }
             Ok(Box::new(WhitespaceTokenizer::new(vocab as u32)?))
         }

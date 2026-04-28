@@ -101,7 +101,9 @@ mod tests {
 
     #[test]
     fn deterministic_across_runs() {
-        let leaves: Vec<Hash> = (0..7).map(|i| hash_bytes(format!("doc-{i}").as_bytes())).collect();
+        let leaves: Vec<Hash> = (0..7)
+            .map(|i| hash_bytes(format!("doc-{i}").as_bytes()))
+            .collect();
         assert_eq!(shard_merkle_root(&leaves), shard_merkle_root(&leaves));
     }
 }

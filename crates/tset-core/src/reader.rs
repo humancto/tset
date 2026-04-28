@@ -13,15 +13,9 @@ use crate::footer::Footer;
 use crate::hashing::{hash_bytes, shard_merkle_root, Hash};
 use crate::header::Header;
 use crate::manifest::Manifest;
-use crate::tokenizer_view::{
-    read_chunk_with_bits, verify_view_header, ChunkInfo, SourceMapEntry,
-};
+use crate::tokenizer_view::{read_chunk_with_bits, verify_view_header, ChunkInfo, SourceMapEntry};
 
-fn required_u64(
-    v: &Value,
-    key: &str,
-    label: &'static str,
-) -> TsetResult<u64> {
+fn required_u64(v: &Value, key: &str, label: &'static str) -> TsetResult<u64> {
     v.get(key)
         .and_then(Value::as_u64)
         .ok_or(TsetError::BadManifest(label))
@@ -58,22 +52,17 @@ pub struct Reader {
 /// the caller has *already verified the shard once*; on a hot streaming
 /// path you can re-open with `skip_reproducibility=true` to avoid
 /// re-tokenizing the test_vector documents on every open.
-#[derive(Debug, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct OpenOptions {
     pub skip_reproducibility: bool,
 }
-
 
 impl Reader {
     pub fn open<P: AsRef<Path>>(path: P) -> TsetResult<Self> {
         Self::open_with_options(path, OpenOptions::default())
     }
 
-    pub fn open_with_options<P: AsRef<Path>>(
-        path: P,
-        opts: OpenOptions,
-    ) -> TsetResult<Self> {
+    pub fn open_with_options<P: AsRef<Path>>(path: P, opts: OpenOptions) -> TsetResult<Self> {
         let r = Self::open_inner(path)?;
         r.verify_invariants_with(opts)?;
         Ok(r)
@@ -268,18 +257,14 @@ impl Reader {
                         .and_then(Value::as_array)
                         .ok_or(TsetError::BadManifest("view.test_vector.doc_hashes"))?;
                     for h in doc_hashes {
-                        let hex_str = h.as_str().ok_or(TsetError::BadManifest(
-                            "view.test_vector.doc_hashes[i]",
-                        ))?;
+                        let hex_str = h
+                            .as_str()
+                            .ok_or(TsetError::BadManifest("view.test_vector.doc_hashes[i]"))?;
                         let key = parse_hash(hex_str, "test_vector doc_hash")?;
                         let content = self.get_document(&key)?;
                         docs_map.insert(key, content);
                     }
-                    crate::tokenizers::verify_reproducibility(
-                        tokenizer.as_ref(),
-                        tv,
-                        &docs_map,
-                    )?;
+                    crate::tokenizers::verify_reproducibility(tokenizer.as_ref(), tv, &docs_map)?;
                 }
             }
         }
@@ -318,9 +303,7 @@ impl Reader {
     }
 
     /// Decode the on-disk TLOG section if present.
-    pub fn on_disk_audit_log(
-        &self,
-    ) -> TsetResult<Option<crate::sections::TlogSection>> {
+    pub fn on_disk_audit_log(&self) -> TsetResult<Option<crate::sections::TlogSection>> {
         let raw = self.manifest.raw();
         let Some(ptr) = raw.get("audit_log_section") else {
             return Ok(None);
@@ -345,9 +328,7 @@ impl Reader {
     }
 
     /// Decode the on-disk TCOL section if present.
-    pub fn on_disk_columns(
-        &self,
-    ) -> TsetResult<Option<crate::sections::TcolSection>> {
+    pub fn on_disk_columns(&self) -> TsetResult<Option<crate::sections::TcolSection>> {
         let raw = self.manifest.raw();
         let Some(ptr) = raw.get("metadata_columns_section") else {
             return Ok(None);
@@ -355,16 +336,16 @@ impl Reader {
         let off = ptr
             .get("offset")
             .and_then(Value::as_u64)
-            .ok_or(TsetError::BadManifest("metadata_columns_section.offset"))? as usize;
+            .ok_or(TsetError::BadManifest("metadata_columns_section.offset"))?
+            as usize;
         let size = ptr
             .get("size")
             .and_then(Value::as_u64)
-            .ok_or(TsetError::BadManifest("metadata_columns_section.size"))? as usize;
-        let end = off
-            .checked_add(size)
-            .ok_or(TsetError::BadManifest(
-                "metadata_columns_section range overflow",
-            ))?;
+            .ok_or(TsetError::BadManifest("metadata_columns_section.size"))?
+            as usize;
+        let end = off.checked_add(size).ok_or(TsetError::BadManifest(
+            "metadata_columns_section range overflow",
+        ))?;
         if end > self.mmap.len() {
             return Err(TsetError::BadManifest(
                 "metadata_columns_section exceeds file",
@@ -383,7 +364,8 @@ impl Reader {
         if let Ok(Some(section)) = self.on_disk_smt() {
             return section.smt_root;
         }
-        if let Some(s) = self.manifest.smt_root_hex() {  // legacy
+        if let Some(s) = self.manifest.smt_root_hex() {
+            // legacy
             if let Ok(b) = hex::decode(s) {
                 if b.len() == 32 {
                     let mut h = [0u8; 32];
@@ -441,7 +423,11 @@ impl Reader {
     }
 
     pub fn view_total_tokens(&self, tokenizer_id: &str) -> TsetResult<u64> {
-        required_u64(self.manifest.view(tokenizer_id)?, "total_tokens", "view.total_tokens")
+        required_u64(
+            self.manifest.view(tokenizer_id)?,
+            "total_tokens",
+            "view.total_tokens",
+        )
     }
 
     pub fn open_view(&self, tokenizer_id: &str) -> TsetResult<TokenizationView<'_>> {

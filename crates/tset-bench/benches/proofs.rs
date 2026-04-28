@@ -29,10 +29,7 @@ fn bench_predicate_filter(c: &mut Criterion) {
             b.iter(|| cols.filter_sql_like("lang = 'en'").unwrap());
         });
         group.bench_with_input(BenchmarkId::new("compound", n), &n, |b, _| {
-            b.iter(|| {
-                cols.filter_sql_like("lang = 'en' AND score > 0.5")
-                    .unwrap()
-            });
+            b.iter(|| cols.filter_sql_like("lang = 'en' AND score > 0.5").unwrap());
         });
         group.bench_with_input(BenchmarkId::new("between", n), &n, |b, _| {
             b.iter(|| cols.filter_sql_like("score BETWEEN 0.2 AND 0.8").unwrap());
@@ -50,16 +47,12 @@ fn bench_exclusion_proof(c: &mut Criterion) {
         }
         let root = tree.root();
         let absent = hash_bytes(b"never-ingested-doc");
-        group.bench_with_input(
-            BenchmarkId::new("prove_then_verify", n),
-            &n,
-            |b, _| {
-                b.iter(|| match tree.prove(&absent) {
-                    Proof::NonInclusion(p) => p.verify(&root),
-                    _ => false,
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("prove_then_verify", n), &n, |b, _| {
+            b.iter(|| match tree.prove(&absent) {
+                Proof::NonInclusion(p) => p.verify(&root),
+                _ => false,
+            });
+        });
     }
     group.finish();
 }

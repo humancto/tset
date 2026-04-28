@@ -20,7 +20,10 @@ fn writer_with_binary_sections_round_trip() {
 
     // Standard reader still verifies the shard
     let r = Reader::open(&path).unwrap();
-    assert_eq!(r.tokenizer_ids().unwrap(), vec!["byte-level-v1".to_string()]);
+    assert_eq!(
+        r.tokenizer_ids().unwrap(),
+        vec!["byte-level-v1".to_string()]
+    );
 
     // Manifest carries the pointer fields
     let manifest = r.manifest().raw();
@@ -161,7 +164,12 @@ fn reader_rejects_tampered_tcol_section_content() {
     w.enable_binary_sections();
     w.add_document_with_metadata(
         b"alpha",
-        Some(&serde_json::json!({"lang": "en"}).as_object().unwrap().clone()),
+        Some(
+            &serde_json::json!({"lang": "en"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        ),
     )
     .unwrap();
     w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();

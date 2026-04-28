@@ -45,25 +45,25 @@
 //! - `tset-cli` — `tset` binary with `inspect` / `verify` / `convert`
 //! - `tset-bench` — criterion benchmarks for the hot paths
 
+pub mod audit_log;
+pub mod columns;
 pub mod constants;
+pub mod dataset;
+pub mod document_store;
 pub mod error;
+pub mod footer;
 pub mod hashing;
 pub mod header;
-pub mod footer;
 pub mod manifest;
-pub mod document_store;
-pub mod tokenizers;
-pub mod tokenizer_view;
-pub mod smt;
-pub mod audit_log;
-pub mod signing;
-pub mod columns;
 pub mod mixture;
 pub mod object_store;
-pub mod sections;
 pub mod reader;
+pub mod sections;
+pub mod signing;
+pub mod smt;
+pub mod tokenizer_view;
+pub mod tokenizers;
 pub mod writer;
-pub mod dataset;
 
 pub use error::{TsetError, TsetResult};
 pub use reader::Reader;
