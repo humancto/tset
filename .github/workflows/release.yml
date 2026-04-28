@@ -24,6 +24,10 @@ on:
       version:
         description: "Version to release (without leading v)"
         required: true
+      skip_crates:
+        description: "Skip crates.io publish (use when retrying Python wheels after a partial release; crates.io versions are immutable so re-publishing fails)."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -53,10 +57,25 @@ jobs:
             echo "::error::tag version $want != Cargo.toml workspace.package.version $got"
             exit 1
           fi
+      - name: Verify version matches python/pyproject.toml
+        run: |
+          want="${{ steps.parse.outputs.version }}"
+          # Match `version = "X.Y.Z"` only inside the [project] table.
+          got=$(awk '/^\[project\]/{p=1; next} /^\[/{p=0} p && /^version *= *"/{gsub(/[^0-9A-Za-z\.\-+]/, "", $3); print $3; exit}' python/pyproject.toml)
+          if [ "$want" != "$got" ]; then
+            echo "::error::tag version $want != python/pyproject.toml [project].version $got"
+            exit 1
+          fi
 
   # ── Publish to crates.io ───────────────────────────────────────────
+  # Both crate-publish jobs honour `inputs.skip_crates` so a manual
+  # workflow_dispatch retry can re-run only the Python pipeline after a
+  # partial release; crates.io versions are immutable, re-publishing
+  # would fail otherwise. For tag pushes the input is unset and these
+  # jobs always run.
   crates-core:
     needs: sanity
+    if: ${{ inputs.skip_crates != true }}
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
@@ -70,7 +89,8 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   crates-downstream:
-    needs: crates-core
+    needs: [sanity, crates-core]
+    if: ${{ inputs.skip_crates != true }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -85,6 +105,10 @@ jobs:
       - name: Wait for tset-core to surface on crates.io index
         run: |
           version="${{ needs.sanity.outputs.version }}"
+          if [ -z "$version" ]; then
+            echo "::error::needs.sanity.outputs.version is empty — `sanity` must be in this job's `needs:`"
+            exit 1
+          fi
           for i in $(seq 1 60); do
             if cargo search tset-core --limit 1 2>/dev/null | grep -q "tset-core = \"$version\""; then
               echo "tset-core $version is indexed"
@@ -164,6 +188,15 @@ jobs:
 
   python-publish:
     needs: [python-wheels, python-sdist, crates-downstream]
+    # When `inputs.skip_crates` is true (manual retry), crates-downstream
+    # is skipped, but we still want to publish Python artefacts. The
+    # condition explicitly accepts a skipped crates-downstream as long
+    # as wheels + sdist actually succeeded.
+    if: |
+      always() &&
+      needs.python-wheels.result == 'success' &&
+      needs.python-sdist.result == 'success' &&
+      (needs.crates-downstream.result == 'success' || needs.crates-downstream.result == 'skipped')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

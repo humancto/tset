@@ -121,17 +121,37 @@ Rust extension wheel was actually included in the install.
 
 ## Recovering from a partial release
 
-If `crates-core` succeeds but a downstream fails (rate limit, transient
-crates.io error), do **not** retry the workflow blindly — `tset-core`
-is already published and re-publishing is rejected. Instead:
+crates.io versions are immutable; re-publishing a published version
+fails. The workflow has a `skip_crates` input that lets you re-run
+**only the Python pipeline** after the crates have already gone out.
 
-1. Wait for the downstream failure to settle.
-2. From a fresh terminal, manually publish the missing crate:
+### Scenario A — crates published, Python wheels failed
+
+Most common case: e.g. a flaky cibuildwheel runner, a PyPI Trusted
+Publishing config typo. Re-run with crates skipped:
+
+```bash
+gh workflow run release.yml -f version=0.3.3 -f skip_crates=true
+```
+
+The `crates-core` and `crates-downstream` jobs are gated by
+`if: inputs.skip_crates != true` and will be **skipped** (not failed).
+`python-publish` accepts a skipped `crates-downstream` as long as
+`python-wheels` and `python-sdist` succeed, so it still runs.
+
+### Scenario B — `tset-core` published but `tset-cli` / `tset-py` failed
+
+Rare (the waiter handles the typical race). If it does happen:
+
+1. Manually publish the missing crate from a maintainer machine:
    ```bash
-   CARGO_REGISTRY_TOKEN=... cargo publish --manifest-path crates/tset-cli/Cargo.toml
+   CARGO_REGISTRY_TOKEN=... cargo publish \
+     --manifest-path crates/tset-cli/Cargo.toml
    ```
-3. Re-trigger only the Python jobs via `gh workflow run release.yml -f version=0.3.3`.
+2. Then run Scenario A to ship the Python artefacts.
 
-For a full mis-release (wrong version tagged), [yank the bad
+### Scenario C — wrong version tagged
+
+[Yank the bad
 versions](https://doc.rust-lang.org/cargo/reference/publishing.html#cargo-yank)
-on crates.io and PyPI, bump to the next patch, and re-tag.
+on crates.io and on PyPI, bump to the next patch, and re-tag.
