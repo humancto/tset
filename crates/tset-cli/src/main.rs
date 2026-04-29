@@ -255,8 +255,10 @@ fn cmd_stats(args: &[&str]) -> Result<(), String> {
         r.header.version_major, r.header.version_minor
     );
 
-    let header_size: u64 = 4096; // SPEC §2: fixed 4 KiB header
-    let footer_size: u64 = 64; // SPEC §3: fixed 64-byte footer (for our purposes)
+    // Sourced from `tset_core::constants` so the breakdown stays
+    // truthful if the format ever bumps these.
+    let header_size: u64 = tset_core::constants::HEADER_SIZE as u64;
+    let footer_size: u64 = tset_core::constants::FOOTER_SIZE as u64;
 
     // Doc store: sum compressed_size of all blocks
     let doc_store_bytes: u64 = manifest

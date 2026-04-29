@@ -191,9 +191,18 @@ fn diff_identical_shards_exits_zero() {
         .arg(dir.path().join("b.tset"))
         .output()
         .unwrap();
+    // The exit-code contract is the whole point of the test: identical
+    // shards MUST produce a zero exit code so CI checks like "did
+    // re-running the pipeline change anything?" can rely on it.
+    assert!(
+        out.status.success(),
+        "expected zero exit on identical shards;\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("shard_merkle_root"));
-    assert!(stdout.contains("250 shared, 0 only-in-a, 0 only-in-b") || stdout.contains("1 shared"));
+    assert!(stdout.contains("OK: shards are identical along every checked axis"));
 }
 
 #[test]
