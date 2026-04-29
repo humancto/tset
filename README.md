@@ -297,6 +297,29 @@ wrapped = HfTokenizer(hf, tokenizer_id="qwen2-5-0-5b")
 
 ---
 
+## Reference compliance workflow
+
+For maintainers facing a regulator, an internal review board, or a
+deletion request, [`docs/compliance/COMPLIANCE.md`](docs/compliance/COMPLIANCE.md)
+is the operational guide: which TSET artefact answers which question,
+what an outside auditor needs to see, and what the verifier checklist
+looks like.
+
+[`examples/compliance/audit.py`](examples/compliance/audit.py) is the
+self-contained verifier the auditor runs. Bundle it with your shard
++ a published `smt_root` and they have everything they need to validate
+your claims independently. Try it locally:
+
+```bash
+python -m examples.compliance.audit tests/conformance/fixtures/fixture-small.tset
+```
+
+Output is the four-receipt summary: SMT root, an inclusion proof for
+one document, a non-inclusion proof for an absent hash, audit-log
+chain status. Five public APIs total, ~200 lines of script.
+
+---
+
 ## What this format is *not* (read this before pitching it as compliance)
 
 TSET makes **integrity** claims, not **authenticity** claims. See [RFC §5.7](RFC.md).
