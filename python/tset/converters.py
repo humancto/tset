@@ -226,20 +226,18 @@ def hf_dataset_view(tset_path: str, tokenizer_id: str = "byte-level-v1"):
 
 
 def to_huggingface_dataset(tset_path: str, tokenizer_id: str = "byte-level-v1"):
-    """Materialize a TSET shard as a HuggingFace `datasets.Dataset`.
+    """Materialize a TSET shard as a HuggingFace ``datasets.Dataset``.
 
-    Lazy-imports `datasets`; raises a clear error if missing. Returns a
-    `Dataset` with columns `text` (str) and `doc_hash` (str hex).
+    .. deprecated:: 0.3.2
+        Use :func:`tset.hf.from_tset` instead — it supports metadata
+        passthrough, the ``tokens`` column, multi-shard datasets, and a
+        streaming variant. This wrapper is kept for backward
+        compatibility and delegates to ``from_tset`` with the same
+        text+doc_hash projection it has always returned.
     """
-    try:
-        from datasets import Dataset as HFDataset  # type: ignore[import-not-found]
-    except ImportError as e:
-        raise RuntimeError(
-            "to_huggingface_dataset requires `datasets`; install with "
-            "`pip install datasets`"
-        ) from e
-    gen = hf_dataset_view(tset_path, tokenizer_id)
-    return HFDataset.from_generator(gen)
+    from tset.hf import from_tset
+
+    return from_tset(tset_path, view=tokenizer_id, with_metadata=False)
 
 
 def tset_to_jsonl(

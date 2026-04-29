@@ -192,19 +192,46 @@ single hash. Add or revoke an exclusion → the root changes → readers detect 
 
 ---
 
-## Format converters
+## Drop-in for `datasets.load_dataset` users
+
+`tset.hf` is the on-ramp for anyone with a HuggingFace dataset
+workflow. Both directions work in one line:
+
+```python
+from datasets import load_dataset
+from tset.hf import to_tset, from_tset
+
+# (1) Convert any HF dataset to TSET. Metadata fields and tokens come along.
+hf = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split="train")
+to_tset(hf, "wikitext-2.tset", metadata_fields="*")
+
+# (2) Open a TSET shard back as a HuggingFace `Dataset`.
+ds = from_tset("wikitext-2.tset", with_tokens=True)
+ds = ds.filter(lambda r: len(r["text"]) > 200)
+ds.train_test_split(test_size=0.1)   # standard HF API works
+```
+
+Multi-shard datasets with deletion overlays applied automatically:
+
+```python
+from tset.hf import from_dataset
+ds = from_dataset("./my-corpus.tset/")  # excluded docs are filtered out
+```
+
+`pip install tset[hf]` pulls `datasets` in.
+
+## Other format converters
 
 ```python
 from tset.converters import (
-    jsonl_to_tset, parquet_to_tset, webdataset_to_tset,
-    mds_to_tset, to_huggingface_dataset,
+    jsonl_to_tset, parquet_to_tset, webdataset_to_tset, mds_to_tset,
 )
 from tset.tokenizers import ByteLevelTokenizer
 
 jsonl_to_tset("input.jsonl", "out.tset", ByteLevelTokenizer(),
               metadata_fields=["lang", "source"])
 webdataset_to_tset("shard.tar", "out.tset", ByteLevelTokenizer())
-# parquet/mds/hf require their respective optional deps
+# parquet/mds require their respective optional deps
 ```
 
 PyTorch users get a lazy-imported `IterableDataset` adapter:

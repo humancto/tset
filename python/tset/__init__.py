@@ -49,3 +49,6 @@ _maybe("dataset", ["Dataset", "DatasetWriter"])
 _maybe("mixture", ["WeightedSampler", "Subset"])
 _maybe("dataloader", ["DataLoader"])
 _maybe("columns", ["MetadataColumns"])
+# tset.hf is intentionally NOT preloaded: it lazy-imports `datasets`
+# only when actually called, so the absence of that optional dep does
+# not slow `import tset` down or surface a confusing ImportError.
