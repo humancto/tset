@@ -43,26 +43,116 @@ fn shard_hash_for_dataset(shard: &Reader) -> Hash {
     hash_bytes(&buf)
 }
 
+/// Dataset overlay version, versioned independently of the per-shard
+/// binary wire format.
+///
+/// Legacy variants — root committed only to shard entries:
+/// - `"0.1.0"` (original Python writer)
+/// - `"0.2.0"` (original Rust writer; same computation, different
+///   string — pre-existing minor inconsistency)
+///
+/// Current — composite root that ALSO commits the exclusion overlay
+/// (the spec fix for issue #4):
+/// - `"0.3.0"`
+pub const OVERLAY_VERSION_CURRENT: &str = "0.3.0";
+
+/// Treat the listed strings as legacy and route their root computation
+/// to the shards-only path. Anything else (including unknown future
+/// versions) yields the composite root.
+fn is_legacy_overlay(version: &str) -> bool {
+    matches!(version, "0.1.0" | "0.2.0")
+}
+
+/// Decode a hex doc-hash string to a 32-byte hash, surfacing both
+/// "not hex" and "wrong length" as `TsetError::BadManifest`. Using
+/// `unwrap_or_default()` here would silently collapse arbitrary
+/// invalid strings to `[0u8; 32]`, which lets a tampered or corrupted
+/// `exclusions.json` produce a valid-looking root and weakens the
+/// integrity guarantee this whole subtree exists to provide.
+fn parse_doc_hash_hex(s: &str) -> TsetResult<[u8; 32]> {
+    let bytes = hex::decode(s)
+        .map_err(|_| TsetError::BadManifest("dataset overlay hash is not valid hex"))?;
+    if bytes.len() != 32 {
+        return Err(TsetError::BadManifest(
+            "dataset overlay hash is not 32 bytes",
+        ));
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
 /// Sort shards by `shard_id` and Merkle-hash the per-shard leaves
-/// `(0x21 || shard_id_bytes || shard_hash || shard_smt_root)`.
-fn dataset_merkle_root(entries: &[ShardEntry]) -> Hash {
+/// `(0x21 || shard_id_bytes || shard_hash || shard_smt_root)`. Used as
+/// the v1 dataset root and as the shards subtree of the v2 composite.
+fn shards_subroot(entries: &[ShardEntry]) -> TsetResult<Hash> {
     if entries.is_empty() {
-        return empty_root();
+        return Ok(empty_root());
     }
     let mut sorted: Vec<&ShardEntry> = entries.iter().collect();
     sorted.sort_by(|a, b| a.shard_id.cmp(&b.shard_id));
-    let leaves: Vec<Hash> = sorted
-        .into_iter()
-        .map(|e| {
-            let mut buf = Vec::with_capacity(1 + e.shard_id.len() + 32 + 32);
-            buf.push(0x21);
-            buf.extend_from_slice(e.shard_id.as_bytes());
-            buf.extend_from_slice(&hex::decode(&e.shard_hash).unwrap_or_default());
-            buf.extend_from_slice(&hex::decode(&e.shard_smt_root).unwrap_or_default());
-            hash_bytes(&buf)
-        })
-        .collect();
-    crate::hashing::merkle_root_unsorted(&leaves)
+    let mut leaves: Vec<Hash> = Vec::with_capacity(sorted.len());
+    for e in sorted {
+        let shard_hash = parse_doc_hash_hex(&e.shard_hash)?;
+        let shard_smt_root = parse_doc_hash_hex(&e.shard_smt_root)?;
+        let mut buf = Vec::with_capacity(1 + e.shard_id.len() + 32 + 32);
+        buf.push(0x21);
+        buf.extend_from_slice(e.shard_id.as_bytes());
+        buf.extend_from_slice(&shard_hash);
+        buf.extend_from_slice(&shard_smt_root);
+        leaves.push(hash_bytes(&buf));
+    }
+    Ok(crate::hashing::merkle_root_unsorted(&leaves))
+}
+
+/// Domain-tagged Merkle root over the sorted exclusion set. Each leaf
+/// is `BLAKE3(0x22 || raw_doc_hash_bytes)`. `0x22` is a distinct domain
+/// tag from `0x21` (shard leaves) so a hash collision between a shard
+/// and an exclusion can't pun across the two subtrees.
+fn exclusions_subroot(exclusions: &BTreeSet<String>) -> TsetResult<Hash> {
+    if exclusions.is_empty() {
+        return Ok(empty_root());
+    }
+    // BTreeSet iterates in sorted order, matching the Python impl.
+    let mut leaves: Vec<Hash> = Vec::with_capacity(exclusions.len());
+    for hex_h in exclusions {
+        let raw = parse_doc_hash_hex(hex_h)?;
+        let mut buf = Vec::with_capacity(1 + 32);
+        buf.push(0x22);
+        buf.extend_from_slice(&raw);
+        leaves.push(hash_bytes(&buf));
+    }
+    Ok(crate::hashing::merkle_root_unsorted(&leaves))
+}
+
+/// Compute the dataset Merkle root for the given overlay version.
+///
+/// Known-legacy versions return the shards-only root, matching pre-fix
+/// behavior so existing datasets verify with the same root they were
+/// written with. Current and future versions return the composite
+/// `BLAKE3(0x42 || shards_subroot || exclusions_subroot)`. Adding or
+/// revoking an exclusion therefore changes the root — the spec fix
+/// for issue #4.
+///
+/// Returns `TsetError::BadManifest` if any shard hash, SMT root, or
+/// excluded doc-hash string fails to decode as 32-byte hex. Python's
+/// `bytes.fromhex` raises on the same input class, so cross-impl
+/// verification stays in agreement on tampered overlays.
+fn dataset_merkle_root(
+    entries: &[ShardEntry],
+    exclusions: &BTreeSet<String>,
+    overlay_version: &str,
+) -> TsetResult<Hash> {
+    let shards_root = shards_subroot(entries)?;
+    if is_legacy_overlay(overlay_version) {
+        return Ok(shards_root);
+    }
+    let excl_root = exclusions_subroot(exclusions)?;
+    let mut buf = Vec::with_capacity(1 + 32 + 32);
+    buf.push(0x42);
+    buf.extend_from_slice(&shards_root);
+    buf.extend_from_slice(&excl_root);
+    Ok(hash_bytes(&buf))
 }
 
 #[derive(Debug, Clone)]
@@ -203,7 +293,17 @@ impl Dataset {
                     .unwrap_or_default(),
             });
         }
-        Ok(dataset_merkle_root(&entries))
+        // Pick the computation that matches the overlay version this
+        // dataset was written with. Legacy datasets (v0.1.0) keep the
+        // shards-only root they had on disk; current datasets (v0.2.0+)
+        // bind the exclusion overlay too, per issue #4.
+        // Default to "0.1.0" if the version field is missing — the
+        // only state that ever existed without one.
+        let overlay_version = manifest
+            .get("version")
+            .and_then(Value::as_str)
+            .unwrap_or("0.1.0");
+        dataset_merkle_root(&entries, &self.exclusions, overlay_version)
     }
 
     /// Locate a document across all shards (skipping excluded ones for
@@ -494,21 +594,28 @@ impl DatasetWriter {
         }
         self.closed = true;
         let snapshot_id = format_snapshot_id(current_timestamp());
-        let ds_root = dataset_merkle_root(&self.shards);
+        // New datasets always use the current overlay version, which
+        // commits the exclusion overlay into the root (issue #4).
+        // The writer's exclusions are inserted via `add_exclusion(&[u8])`
+        // and hex-encoded by us, so this call is only fallible on a
+        // logic bug (corrupt internal state) — `?` is enough.
+        let ds_root = dataset_merkle_root(&self.shards, &self.exclusions, OVERLAY_VERSION_CURRENT)?;
         self.audit.append(
             "version_snapshot",
             json!({
                 "snapshot_id": snapshot_id,
                 "dataset_merkle_root": hex::encode(ds_root),
                 "shard_count": self.shards.len(),
+                "exclusion_count": self.exclusions.len(),
             }),
             current_timestamp(),
         );
         let manifest = json!({
-            "version": "0.2.0",
+            "version": OVERLAY_VERSION_CURRENT,
             "created_at": current_timestamp(),
             "shards": self.shards.iter().map(ShardEntry::to_json).collect::<Vec<_>>(),
             "dataset_merkle_root": hex::encode(ds_root),
+            "exclusion_count": self.exclusions.len(),
             "audit_log": self.audit.to_json(),
             "snapshot_id": snapshot_id.clone(),
         });

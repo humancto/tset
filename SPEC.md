@@ -273,6 +273,66 @@ v0.1 readers MUST ignore unknown manifest keys and unknown body sections whose
 4-byte magic they do not recognise (skipping by length is supported because
 all body sections start with a magic + size header).
 
+## 8a. Dataset overlay
+
+A multi-shard dataset directory layers a tiny JSON overlay on top of one or
+more `.tset` shards:
+
+```
+my-dataset.tset/
+  manifest.tset.json   # dataset root manifest
+  shards/
+    part-00001.tset
+    ...
+  exclusions.json      # dataset-wide exclusion overlay
+```
+
+The overlay is versioned independently of the per-shard binary wire format
+via a top-level `"version"` field in `manifest.tset.json`:
+
+| Overlay version | Dataset Merkle root computation |
+|---|---|
+| `"0.1.0"` (legacy, original Python writer) | shards-only |
+| `"0.2.0"` (legacy, original Rust writer)   | shards-only — same computation as 0.1.0, different label, kept for backward compatibility |
+| `"0.3.0"` (current)                        | composite: `BLAKE3(0x42 \|\| shards_subroot \|\| exclusions_subroot)` |
+
+Where:
+
+```
+shards_subroot     = MerkleRoot([
+                       BLAKE3(0x21 || shard_id_bytes
+                                    || shard_hash
+                                    || shard_smt_root)
+                       for each shard, sorted by shard_id
+                     ])
+                     # empty entry list yields EMPTY_ROOT (32 zero bytes)
+
+exclusions_subroot = MerkleRoot([
+                       BLAKE3(0x22 || raw_doc_hash_bytes)
+                       for each excluded hash, sorted lexically as hex
+                     ])
+                     # empty exclusion set yields EMPTY_ROOT
+```
+
+Domain tags `0x21` and `0x22` distinguish shard leaves from exclusion leaves
+so a hash collision between a shard hash and an exclusion hash cannot pun
+across the two subtrees. The composite domain tag `0x42` ensures the
+dataset root cannot be passed off as either subroot taken alone.
+
+Conforming readers MUST:
+
+1. Parse the `version` field; if absent, treat as `"0.1.0"`.
+2. Use the legacy shards-only computation for known-legacy versions
+   (`"0.1.0"`, `"0.2.0"`).
+3. Use the composite computation for `"0.3.0"` and any later version they
+   recognise.
+4. Apply the exclusion overlay at read time regardless of overlay version
+   — exclusions filter document iteration even on legacy datasets, only
+   the *root* differs.
+
+Conforming writers MUST emit `"version": "0.3.0"` and the composite
+`dataset_merkle_root` for every newly-written dataset manifest.
+
 ## 9. Out of scope for this version
 
 The following are deferred and not part of v0.1 binary layout:

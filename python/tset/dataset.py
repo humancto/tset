@@ -59,7 +59,37 @@ def _shard_hash_for_dataset(shard_path: str) -> bytes:
         )
 
 
-def _dataset_merkle_root(entries: list[ShardEntry]) -> bytes:
+# Dataset overlay version (versioned independently of the per-shard
+# binary wire format).
+#
+# Legacy variants — the root committed only to the shard entries:
+#   "0.1.0"  written by the original Python DatasetWriter
+#   "0.2.0"  written by the original Rust DatasetWriter (different
+#            string, identical computation — pre-existing minor
+#            inconsistency between the two impls)
+#
+# Current — the composite root that ALSO commits the exclusion
+# overlay (the spec fix for issue #4):
+#   "0.3.0"
+#
+# Readers map known-legacy strings to the legacy computation so old
+# datasets verify with the same root they were written with. New
+# writers always emit "0.3.0".
+_LEGACY_OVERLAY_VERSIONS = frozenset({"0.1.0", "0.2.0"})
+OVERLAY_VERSION_CURRENT = "0.3.0"
+
+
+def _is_legacy_overlay(version: str | None) -> bool:
+    """Treat known-legacy strings as legacy; treat everything else as
+    current. The unknown-future case yields the composite root —
+    callers verifying against a published root will detect a mismatch
+    loudly rather than silently use stale semantics."""
+    return version in _LEGACY_OVERLAY_VERSIONS
+
+
+def _shards_subroot(entries: list[ShardEntry]) -> bytes:
+    """Domain-tagged Merkle root over per-shard leaves. Unchanged from
+    overlay v1; lifted out so v2's composite root can reuse it."""
     leaves = [
         hash_bytes(
             b"\x21"
@@ -70,6 +100,45 @@ def _dataset_merkle_root(entries: list[ShardEntry]) -> bytes:
         for e in sorted(entries, key=lambda x: x.shard_id)
     ]
     return merkle_root(leaves) if leaves else EMPTY_ROOT
+
+
+def _exclusions_subroot(exclusions: set[str] | list[str]) -> bytes:
+    """Domain-tagged Merkle root over sorted hex-encoded exclusion hashes.
+
+    Each leaf is ``BLAKE3(0x22 || raw_doc_hash_bytes)``. ``0x22`` is a
+    distinct domain tag from ``0x21`` (shard leaves) so a hash-collision
+    between a shard hash and an exclusion hash can't pun across the two
+    subtrees.
+    """
+    leaves = [
+        hash_bytes(b"\x22" + bytes.fromhex(h))
+        for h in sorted(exclusions)
+    ]
+    return merkle_root(leaves) if leaves else EMPTY_ROOT
+
+
+def _dataset_merkle_root(
+    entries: list[ShardEntry],
+    exclusions: set[str] | list[str] | None = None,
+    *,
+    overlay_version: str = OVERLAY_VERSION_CURRENT,
+) -> bytes:
+    """Compute the dataset Merkle root.
+
+    For known-legacy overlay versions (`0.1.0`, `0.2.0`) the result is
+    just the shards subroot, matching pre-fix behavior so old datasets
+    verify with the same root they were written with.
+
+    For current and future versions, the result is the composite
+    ``BLAKE3(0x42 || shards_subroot || exclusions_subroot)``. Adding
+    or revoking an exclusion changes the root — that's the fix for
+    issue #4.
+    """
+    shards_root = _shards_subroot(entries)
+    if _is_legacy_overlay(overlay_version):
+        return shards_root
+    excl_root = _exclusions_subroot(exclusions or set())
+    return hash_bytes(b"\x42" + shards_root + excl_root)
 
 
 class Dataset:
@@ -128,7 +197,16 @@ class Dataset:
             with Reader(self.path) as r:
                 return r.header.shard_merkle_root
         entries = [ShardEntry(**e) for e in self._dataset_manifest["shards"]]
-        return _dataset_merkle_root(entries)
+        # Pick the computation that matches the overlay version this
+        # dataset was written with. Known-legacy versions ("0.1.0",
+        # "0.2.0") keep the shards-only root they had on disk; current
+        # ("0.3.0") binds the exclusion overlay too, per issue #4.
+        # Default to "0.1.0" if the version field is missing — that's
+        # the only state that ever existed without one.
+        overlay_version = self._dataset_manifest.get("version", "0.1.0")
+        return _dataset_merkle_root(
+            entries, self._exclusions, overlay_version=overlay_version
+        )
 
     def smt_root_per_shard(self) -> dict[str, bytes]:
         out: dict[str, bytes] = {}
@@ -303,20 +381,28 @@ class DatasetWriter:
             return
         self._closed = True
         snapshot_id = datetime.now(timezone.utc).strftime("snapshot-%Y%m%d-%H%M%S")
-        ds_root = _dataset_merkle_root(self._shards)
+        # New datasets always use the current overlay version, which
+        # commits the exclusion overlay into the root (issue #4).
+        ds_root = _dataset_merkle_root(
+            self._shards,
+            self._exclusions,
+            overlay_version=OVERLAY_VERSION_CURRENT,
+        )
         self._audit.append(
             "version_snapshot",
             {
                 "snapshot_id": snapshot_id,
                 "dataset_merkle_root": ds_root.hex(),
                 "shard_count": len(self._shards),
+                "exclusion_count": len(self._exclusions),
             },
         )
         manifest = {
-            "version": "0.1.0",
+            "version": OVERLAY_VERSION_CURRENT,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "shards": [s.__dict__ for s in self._shards],
             "dataset_merkle_root": ds_root.hex(),
+            "exclusion_count": len(self._exclusions),
             "audit_log": self._audit.to_dict(),
             "snapshot_id": snapshot_id,
         }

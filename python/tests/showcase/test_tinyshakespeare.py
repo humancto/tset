@@ -317,20 +317,15 @@ class TestH_RTBFReceipt:
     ):
         """The full receipts flow:
 
-        1. A document is present in the shard (inclusion proof verifies).
+        1. A document is present in the shard.
         2. We add a dataset-level exclusion overlay against its hash.
-        3. The dataset Merkle root changes.   ← KNOWN GAP, see below.
+        3. The dataset Merkle root **changes** (issue #4 fix).
         4. Reading via Dataset filters the excluded doc out of iteration.
 
-        Step 3 is currently *not* enforced by either the Python or Rust
-        implementation: ``_dataset_merkle_root()`` only commits to the
-        list of registered shards, not to the exclusion overlay.
-
-        That's a real gap between the pitch ("shards + exclusions +
-        weights bind to the root") and the v0.3.2 binary, tracked as a
-        v0.4 follow-up. We assert (4) — exclusions still take effect at
-        read time — and assert (3) only via the exclusion-overlay file
-        contents rather than the root.
+        Pre-fix this test asserted (3) was broken; post-fix it asserts
+        the spec promise — adding or revoking an exclusion produces a
+        new root, so any party verifying against a published root
+        detects the mutation.
         """
         from tset.dataset import Dataset, DatasetWriter
 
@@ -370,14 +365,14 @@ class TestH_RTBFReceipt:
                 "excluded doc surfaced through Dataset.stream_tokens"
             )
 
-        # Receipt 3 (commitment to the exclusion overlay) is currently
-        # NOT enforced by the dataset Merkle root. See the docstring; we
-        # capture today's behavior in an xfail-worthy assertion so a
-        # future fix flips it green.
-        # _dataset_merkle_root() leaves are derived from ShardEntry only,
-        # so the root does not change when exclusions are added.
-        assert root_before == ds_after.dataset_merkle_root(), (
-            "behavior probe: today's root is not bound to exclusions; "
-            "if this assertion starts failing, a fix has landed and the "
-            "test should be inverted to assert change instead."
+        # Receipt 3 (commitment to the exclusion overlay): with the
+        # issue #4 fix, the composite dataset root reflects the
+        # exclusions subtree, so adding an exclusion changes the root.
+        # A reader verifying against a previously-published root will
+        # detect this mutation immediately.
+        root_after = ds_after.dataset_merkle_root()
+        assert root_before != root_after, (
+            "dataset Merkle root must change when an exclusion is added "
+            "(issue #4 fix); if this assertion regresses the spec promise "
+            "is broken again."
         )
