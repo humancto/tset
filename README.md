@@ -247,6 +247,27 @@ for tokens, doc_hash in DataLoader(ds, batch_size=None):
 
 ---
 
+## Verify a published corpus in 10 seconds
+
+A real, deterministically-built TSET shard ships in this repo and is
+served by GitHub raw. Anyone can fetch and verify it without trusting
+us:
+
+```bash
+pip install tset
+python -m examples.published.verify \
+  https://raw.githubusercontent.com/humancto/tset/main/examples/published/corpus.tset \
+  --expected-smt-root=369cf1fbacb1af433d2ea84ead6aa326eba6bd4698f872304a533444a5815444
+```
+
+The verifier opens the shard, generates an inclusion proof for one
+document and a non-inclusion proof for an absent hash, rejects a
+tampered proof, verifies the audit-log chain, and pins the SMT root.
+30 lines of code, no library dependencies beyond `tset`. See
+[`examples/published/`](examples/published/) for the source.
+
+---
+
 ## Real tokenizer recipe (BPE / SentencePiece)
 
 Production training pipelines run BPE or SentencePiece, not byte-level
