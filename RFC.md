@@ -270,6 +270,8 @@ Readers expose a `WeightedSampler` that respects these weights without requiring
 
 A formal **non-inclusion proof** for a document hash is the SMT non-inclusion proof at a specific version snapshot, plus the log entry binding that version to the snapshot's SMT root.
 
+**On-disk binary sections (v0.3.2+).** The SMT, the audit log, and the metadata column index can be encoded as opt-in on-disk sections (`TSMT`, `TLOG`, `TCOL`) in addition to the manifest's JSON copies. This lets large corpora skip a multi-megabyte JSON parse on open and lets streaming verifiers seek directly to the proof structures. The two encodings agree byte-for-byte on roots and present-keys; this equivalence is locked by `python/tests/test_binary_sections.py`. Writers opt in via `Writer.enable_binary_sections()`; v0.4 (in flight) makes them mandatory and removes the inline JSON forms. See `SPEC.md` for the section layout and `python/tset/sections.py` for the reference codec.
+
 **What provenance proves and does not prove:**
 
 - ✅ A specific document hash *is* or *is not* present in a specific snapshot of the corpus (SMT)
@@ -297,6 +299,8 @@ To protect against misuse and overreach in compliance contexts, the spec explici
 - **Model-level unlearning.** TSET supports evidence for data-pipeline exclusion workflows. Whether a model trained on a TSET corpus has functionally forgotten a document is a model-weight question outside the format's scope.
 - **Legal compliance with any specific regulation.** TSET provides primitives that *enable* compliance workflows. Whether a particular use satisfies GDPR Article 17, EU AI Act Article 53, or any other regulation is a determination for legal counsel and the relevant regulator.
 - **Tokenizer semantic correctness.** The reproducibility proof detects configuration drift, not semantic errors in the tokenizer itself.
+
+The full security accounting — including which threats are in scope, which assumptions are load-bearing, and what a verifier should actually do — lives in [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md). Read it before pitching TSET to a regulator or an adversarial reviewer.
 
 #### 5.8 Dataset layout
 
@@ -608,6 +612,23 @@ Items the author specifically wants critique on in the next round:
 10. **Is single-shard mode adequately specified** as a degenerate case of dataset mode, or does it need its own subsection?
 
 ### 15. Changelog
+
+**v0.4 → v0.4 refresh (post-implementation):** Edits made after the
+reference implementation shipped two correctness items the original
+RFC didn't anticipate:
+
+- **§5.5 documents the v0.3.2 on-disk binary sections** (`TSMT`, `TLOG`,
+  `TCOL`) as opt-in alongside the inline JSON forms, with a forward
+  pointer to v0.4 making them mandatory. The original RFC treated SMT
+  / audit log / column index as manifest-only.
+- **§5.7 links to `docs/security/THREAT_MODEL.md`** — the maintainer-side
+  accounting of what the format defends against, what's out of scope,
+  and which cryptographic assumptions are load-bearing. The old §5.7
+  was a four-bullet disclaimer; the threat model is the long-form
+  version a security reviewer needs.
+- No normative changes. The wire format and proof structures are
+  unchanged; this refresh only documents what the reference impl
+  already does.
 
 **v0.3 → v0.4 (this version):** Polish for public RFC release based on third-round review:
 
