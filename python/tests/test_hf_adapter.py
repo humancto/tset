@@ -144,6 +144,81 @@ class TestFromTset:
         with pytest.raises(Exception):
             list(from_tset(out, with_tokens=True, streaming=True))
 
+    def test_streaming_with_tokens_yields_first_doc_lazily(self, tmp_path: Path):
+        """Regression for the eager-materialization bug Codex flagged:
+        with ``streaming=True`` and ``with_tokens=True`` the first
+        record must be available without buffering tokens for every
+        other doc first.
+
+        We assert correctness of every per-doc token count rather than
+        memory use directly (peak-memory checks are flaky in CI). The
+        underlying fix walks ``documents()`` and a per-doc token
+        iterator in lockstep, so a regression that re-introduced the
+        eager dict would still pass content checks but the failure
+        mode is the OOM, not the byte values.
+        """
+        from tset.hf import from_tset
+        from tset.tokenizers import ByteLevelTokenizer
+        from tset.writer import Writer
+
+        out = tmp_path / "stream-bound.tset"
+        with Writer(str(out)) as w:
+            # Each doc must be content-distinct or the writer's
+            # BLAKE3 dedup will collapse them to one.
+            for i in range(20):
+                w.add_document(f"doc-{i:03d}-".encode() + b"x" * 200)
+            w.add_tokenizer_view(ByteLevelTokenizer())
+
+        ds = from_tset(out, with_tokens=True, streaming=True)
+        it = iter(ds)
+        first = next(it)
+        # ByteLevel: 1 token per byte. Each doc is "doc-NNN-" (8 bytes)
+        # + 200 'x' bytes = 208.
+        assert len(first["tokens"]) == 208
+        rest = list(it)
+        assert len(rest) == 19
+        assert all(len(r["tokens"]) == 208 for r in rest)
+
+    def test_metadata_collision_iteratively_prefixed(self, tmp_path: Path):
+        """Regression for Codex P2: a shard with both `text` (reserved)
+        and `meta_text` (already prefixed) as metadata column names
+        must not silently overwrite either. Output names are
+        deterministic and lossless: input `text` → `meta_text`,
+        input `meta_text` → `meta_meta_text`.
+        """
+        from tset.hf import from_tset
+        from tset.tokenizers import ByteLevelTokenizer
+        from tset.writer import Writer
+
+        out = tmp_path / "collide.tset"
+        with Writer(str(out)) as w:
+            w.add_document(
+                b"hello",
+                metadata={"text": "alpha-meta", "meta_text": "beta-meta"},
+            )
+            w.add_document(
+                b"world",
+                metadata={"text": "gamma-meta", "meta_text": "delta-meta"},
+            )
+            w.add_tokenizer_view(ByteLevelTokenizer())
+
+        ds = from_tset(out)
+        assert "meta_text" in ds.column_names
+        assert "meta_meta_text" in ds.column_names
+
+        # Document body still under its reserved key
+        assert sorted(ds["text"]) == ["hello", "world"]
+
+        # The manifest is encoded with sort_keys=True, so on read the
+        # metadata columns iterate in alphabetical order:
+        # `meta_text` before `text`. The collision resolver claims in
+        # iteration order, so:
+        #   input "meta_text" -> output "meta_text"   (no collision)
+        #   input "text"      -> "meta_text" taken    -> "meta_meta_text"
+        # Both columns survive intact under deterministic names.
+        assert sorted(ds["meta_text"]) == ["beta-meta", "delta-meta"]
+        assert sorted(ds["meta_meta_text"]) == ["alpha-meta", "gamma-meta"]
+
 
 # ── to_tset ──────────────────────────────────────────────────────────
 

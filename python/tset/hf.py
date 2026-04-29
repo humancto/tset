@@ -42,23 +42,58 @@ def _require_datasets():
         ) from e
 
 
-# Reserved keys we put on every record. If a metadata column collides
-# we prefix it with ``meta_`` instead of clobbering the receipt.
+# Reserved keys we put on every record. Metadata columns that collide
+# with a reserved name (or with another already-claimed output name)
+# get an iterative ``meta_`` prefix — see ``_build_column_name_map``.
 _RESERVED = ("text", "doc_hash", "tokens")
 
 
-def _read_tokens_per_doc(reader, view: str) -> dict[bytes, list[int]]:
-    """Build a ``doc_hash → token list`` map by streaming the view once.
+def _per_doc_token_iter(reader, view: str) -> Iterator[tuple[bytes, list[int]]]:
+    """Yield ``(doc_hash, tokens)`` per document, lazily.
 
-    The reader yields per-document batches with the doc_hash attached, so
-    we collect by hash rather than by sequential index — that way the
-    map remains correct even if the doc order changes between
-    ``Reader.documents()`` and the token stream.
+    ``Reader.stream_tokens`` yields ``(batch, doc_hash)`` where
+    consecutive batches with the same ``doc_hash`` belong to the same
+    document. This wrapper accumulates a per-document list and emits it
+    on the boundary, then drops it. Memory is O(largest single doc),
+    not O(corpus) — the eager-dict version that used to live here
+    materialized the entire shard in memory before the first record
+    yielded, defeating ``streaming=True``.
     """
-    out: dict[bytes, list[int]] = {}
-    for batch, dh in reader.stream_tokens(view, batch_size=1_000_000):
-        out.setdefault(dh, []).extend(int(x) for x in batch)
-    return out
+    current_hash: bytes | None = None
+    current_tokens: list[int] = []
+    for batch, dh in reader.stream_tokens(view, batch_size=4096):
+        if current_hash is not None and dh != current_hash:
+            yield current_hash, current_tokens
+            current_tokens = []
+        current_hash = dh
+        current_tokens.extend(int(x) for x in batch)
+    if current_hash is not None:
+        yield current_hash, current_tokens
+
+
+def _build_column_name_map(
+    col_names: list[str], with_tokens: bool
+) -> dict[str, str]:
+    """Map each input metadata column to a non-colliding output name.
+
+    Reserved keys (``text``, ``doc_hash``, optionally ``tokens``) are
+    avoided by iterative ``meta_`` prefixing: ``text`` → ``meta_text``;
+    if ``meta_text`` is itself a metadata column it becomes
+    ``meta_meta_text``, and so on. Processing is in input order; first
+    claim wins. The mapping is computed once and reused for every row,
+    so column names stay stable across the dataset.
+    """
+    used: set[str] = {"text", "doc_hash"}
+    if with_tokens:
+        used.add("tokens")
+    mapping: dict[str, str] = {}
+    for name in col_names:
+        candidate = name
+        while candidate in used:
+            candidate = f"meta_{candidate}"
+        mapping[name] = candidate
+        used.add(candidate)
+    return mapping
 
 
 def _row_records(
@@ -68,9 +103,14 @@ def _row_records(
     with_tokens: bool,
     with_metadata: bool,
 ) -> Iterator[dict[str, Any]]:
-    """Yield one dict per document, in writer-insertion order."""
-    tokens_lookup: dict[bytes, list[int]] = {}
+    """Yield one dict per document, in writer-insertion order.
+
+    Streams tokens per-document when ``with_tokens=True`` so callers
+    using ``streaming=True`` actually get O(1) memory regardless of
+    corpus size.
+    """
     chosen_view = view
+    token_iter: Iterator[tuple[bytes, list[int]]] | None = None
     if with_tokens:
         if chosen_view is None:
             ids = reader.tokenizer_ids()
@@ -79,11 +119,11 @@ def _row_records(
                     "with_tokens=True but the shard has no tokenizer views"
                 )
             chosen_view = ids[0]
-        tokens_lookup = _read_tokens_per_doc(reader, chosen_view)
+        token_iter = _per_doc_token_iter(reader, chosen_view)
 
     cols = reader.metadata_columns() if with_metadata else None
     col_names = cols.names() if cols is not None else []
-    # Snapshot the column data once; columns are list-backed so this is cheap.
+    name_map = _build_column_name_map(col_names, with_tokens=with_tokens)
     col_data = {name: cols.column(name) for name in col_names} if cols else {}
 
     for i, (doc_hash, content) in enumerate(reader.documents()):
@@ -91,14 +131,25 @@ def _row_records(
             "text": content.decode("utf-8", errors="replace"),
             "doc_hash": doc_hash.hex(),
         }
-        if with_tokens:
-            rec["tokens"] = tokens_lookup.get(doc_hash, [])
+        if token_iter is not None:
+            try:
+                tok_hash, tok_list = next(token_iter)
+            except StopIteration:
+                tok_hash, tok_list = doc_hash, []
+            # The two iterators walk in writer-insertion order; a
+            # mismatch here would mean the shard is internally
+            # inconsistent. Surface it loudly rather than silently
+            # mis-pair docs and tokens.
+            if tok_hash != doc_hash:
+                raise RuntimeError(
+                    f"internal: token iterator out of sync with document "
+                    f"order at index {i} (doc {doc_hash.hex()[:12]} != "
+                    f"tokens for {tok_hash.hex()[:12]})"
+                )
+            rec["tokens"] = tok_list
         for name in col_names:
             value = col_data[name][i] if i < len(col_data[name]) else None
-            if name in _RESERVED:
-                rec[f"meta_{name}"] = value
-            else:
-                rec[name] = value
+            rec[name_map[name]] = value
         yield rec
 
 
