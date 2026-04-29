@@ -205,6 +205,16 @@ class Reader:
         source_map = view["source_map"]
         vocab_size = view["vocab_size"]
         bits_per_token = view.get("bits_per_token", 32)  # v0.3+; default for older shards
+
+        # Bounded chunk cache. Decoded chunk arrays are O(num_tokens *
+        # 4B); for a 1 GB byte-level corpus that's ~256 MB of decoded
+        # tokens. An unbounded cache here defeats the streaming
+        # contract from the threat model ("peak RSS is O(block_size +
+        # chunk_size), not O(corpus_size)"). Source map entries are
+        # written in monotone token-offset order by the writer, so as
+        # we walk forward we can evict any chunk whose end is below
+        # the current cursor — those chunks cannot be touched again
+        # by a later entry.
         chunk_arrays: dict[int, np.ndarray] = {}
 
         def chunk_arr(idx: int) -> np.ndarray:
@@ -221,6 +231,10 @@ class Reader:
             chunk_arrays[idx] = arr
             return arr
 
+        def evict_below(min_keep_idx: int) -> None:
+            for k in [k for k in chunk_arrays if k < min_keep_idx]:
+                del chunk_arrays[k]
+
         chunk_starts: list[int] = []
         cum = 0
         for c in chunks:
@@ -236,6 +250,10 @@ class Reader:
             cid = 0
             while cid + 1 < len(chunk_starts) and chunk_starts[cid + 1] <= cur:
                 cid += 1
+            # Evict any cached chunk we won't revisit. Source map is
+            # monotone in token_offset, so chunks below `cid` cannot
+            # be referenced by a later entry.
+            evict_below(cid)
             while remaining > 0:
                 arr = chunk_arr(cid)
                 offset = cur - chunk_starts[cid]
