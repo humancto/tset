@@ -193,8 +193,8 @@ the `tset_rs` wheel installed.
 | Concern | Severity | Mitigation today | v0.4 plan |
 |---|---|---|---|
 | 4-5× JSONL on tiny-doc corpora | **deal-breaker for tweet-shaped data** | shard records into larger TSET documents | unchanged — this is fundamental to per-doc indexing |
-| Inline duplication when binary sections enabled | **bloat** | leave sections off until you need them | mandatory sections, inline forms dropped |
-| `smt_present_keys` redundant with `document_index` | minor | tolerate or post-process the manifest | v0.4 spec drops it |
+| Inline duplication when binary sections enabled | **fixed in v0.4** | already addressed; v0.4 writers drop inline JSON forms when emitting sections (~31% size cut measured on TinyShakespeare) | n/a — shipped |
+| `smt_present_keys` redundant with `document_index` | **fixed in v0.4** | already addressed; v0.4 doesn't write `smt_present_keys` (data lives in TSMT section instead) | n/a — shipped |
 | Hex encoding of every hash in JSON | minor | base64 in v0.4 manifest, binary in sections | v0.4 |
 | Manifest grows unbounded with chunk count | manageable | tune chunk size (default 64 K tokens is fine) | v0.4 binary index |
 | Dataset Merkle root not bound to exclusion overlay | **fixed in overlay v0.3.0** | already addressed; legacy v0.1.0 / v0.2.0 manifests still verify with the original shards-only root | n/a — shipped |

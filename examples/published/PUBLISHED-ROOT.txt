@@ -8,12 +8,12 @@ Tokenizer view    : byte-level-v1
 
 --- on-disk artefact ---
 Path              : examples/published/corpus.tset
-Size              : 188,540 bytes
+Size              : 188,539 bytes
 
 --- receipts ---
 shard_merkle_root : 9aaf829b410a26085a5e0fd30b8c130c58771dec25fb5f760f4d4a5494b623ab
 smt_root          : 369cf1fbacb1af433d2ea84ead6aa326eba6bd4698f872304a533444a5815444
-manifest_hash     : 7e787dc584ba7a4769414a81415dbc172c89a529ddc941405e9a3629f6449328
+manifest_hash     : daefcd57aade4a8832e2334a0fc6ff0250b0827208f2416b841dbbf60cbbf925
 document_count    : 200
 audit_log_entries : 202
 first_doc_hash    : 912c26a1450aa0860809fff28ad9b34b2c6779b336f6c28f809276f571f3aece

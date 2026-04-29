@@ -25,12 +25,12 @@ CORPUS = REPO / "examples" / "published" / "corpus.tset"
 # the published artefact, regenerate via `python -m examples.published.build`
 # and update both the README, PUBLISHED-ROOT.txt, and these constants.
 EXPECTED = {
-    "size_bytes": 188540,
+    "size_bytes": 188539,
     "document_count": 200,
     "audit_log_entries": 202,
     "shard_merkle_root_hex": "9aaf829b410a26085a5e0fd30b8c130c58771dec25fb5f760f4d4a5494b623ab",
     "smt_root_hex": "369cf1fbacb1af433d2ea84ead6aa326eba6bd4698f872304a533444a5815444",
-    "manifest_hash_hex": "7e787dc584ba7a4769414a81415dbc172c89a529ddc941405e9a3629f6449328",
+    "manifest_hash_hex": "daefcd57aade4a8832e2334a0fc6ff0250b0827208f2416b841dbbf60cbbf925",
     "first_doc_hash_hex": "912c26a1450aa0860809fff28ad9b34b2c6779b336f6c28f809276f571f3aece",
 }
 

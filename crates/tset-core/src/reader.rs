@@ -187,7 +187,15 @@ impl Reader {
         if merkle != self.header.shard_merkle_root {
             return Err(TsetError::ShardMerkleRootMismatch("header"));
         }
-        if let Some(audit) = self.manifest.audit_log() {
+        // v0.4 stores the audit log in the TLOG section instead of
+        // inline. Resolve the right source then verify.
+        if self.header.version_minor >= 4 {
+            if let Some(tlog) = self.on_disk_audit_log()? {
+                if !verify_audit_log(&tlog.audit_json) {
+                    return Err(TsetError::AuditLogIntegrityFailed);
+                }
+            }
+        } else if let Some(audit) = self.manifest.audit_log() {
             if !verify_audit_log(audit) {
                 return Err(TsetError::AuditLogIntegrityFailed);
             }

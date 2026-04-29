@@ -74,7 +74,10 @@ def main() -> int:
     if OUT.exists():
         OUT.unlink()
     print(f"Writing {OUT} …")
-    with Writer(str(OUT)) as w:
+    # Pin shard_id explicitly: the Writer default is a random uuid,
+    # which would make manifest_hash non-reproducible even with every
+    # TSET_DETERMINISTIC_* env var set.
+    with Writer(str(OUT), shard_id="published-tinyshakespeare-v0001") as w:
         for i, p in enumerate(selected):
             w.add_document(p.encode("utf-8"), metadata={"para_id": i})
         w.add_tokenizer_view(ByteLevelTokenizer())

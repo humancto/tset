@@ -11,7 +11,7 @@ members = [
 # Crate version tracks the binary format version: a v0.3.x crate
 # implements the v0.3.x wire format. Patch component is reserved for
 # implementation fixes that do not change the wire format.
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 authors = ["TSET contributors <noreply@humancto.dev>"]

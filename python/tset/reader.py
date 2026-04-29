@@ -95,7 +95,14 @@ class Reader:
             raise ValueError("shard_merkle_root in manifest does not match docs")
         if merkle != self.header.shard_merkle_root:
             raise ValueError("shard_merkle_root in header does not match docs")
-        if "audit_log" in self.manifest:
+        # v0.4 stores the audit log in the TLOG section instead of
+        # inline. ``self.audit_log()`` picks the right path. The chained-
+        # hash + signature integrity contract holds the same way.
+        if self.header.version_minor >= 4:
+            log = self.audit_log()
+            if log.entries and not log.verify():
+                raise ValueError("audit log integrity check failed")
+        elif "audit_log" in self.manifest:
             log = AuditLog.from_dict(self.manifest["audit_log"])
             if not log.verify():
                 raise ValueError("audit log integrity check failed")
@@ -279,9 +286,43 @@ class Reader:
     def view_total_tokens(self, tokenizer_id: str) -> int:
         return self._open_view(tokenizer_id)["total_tokens"]
 
+    # ── v0.4 source-of-truth helpers ─────────────────────────────────
+    # In v0.4 the on-disk TSMT/TLOG/TCOL sections are the sole source
+    # for SMT keys, audit log, and metadata columns. v0.3 shards keep
+    # the inline JSON forms in the manifest. Each accessor below picks
+    # the right path automatically based on the header's version_minor.
+
+    def _is_v04(self) -> bool:
+        return self.header.version_minor >= 4
+
+    def _section_bytes(self, manifest_key: str) -> bytes | None:
+        """Read raw section bytes for ``manifest_key`` (smt_section,
+        audit_log_section, or metadata_columns_section). Returns None
+        when the section pointer isn't in the manifest."""
+        info = self.manifest.get(manifest_key)
+        if not info:
+            return None
+        offset = info["offset"]
+        size = info["size"]
+        return bytes(self._mm[offset : offset + size])
+
     def smt(self) -> SparseMerkleTree:
-        """Reconstruct the SMT from the present-keys list in the manifest."""
+        """Reconstruct the SMT from on-disk material.
+
+        v0.4: parse TSMT section. v0.3 and older: read the inline
+        ``smt_present_keys`` field from the manifest.
+        """
         tree = SparseMerkleTree()
+        if self._is_v04():
+            from tset import sections as _sec
+
+            buf = self._section_bytes("smt_section")
+            if buf is None:
+                raise ValueError("v0.4 shard missing TSMT section")
+            decoded = _sec.decode_tsmt_section(buf)
+            for k in decoded["present_keys"]:
+                tree.insert(k)
+            return tree
         for hex_h in self.manifest.get("smt_present_keys", []):
             tree.insert(bytes.fromhex(hex_h))
         return tree
@@ -305,7 +346,27 @@ class Reader:
         return self.smt().root()
 
     def metadata_columns(self) -> MetadataColumns:
+        if self._is_v04():
+            from tset import sections as _sec
+
+            buf = self._section_bytes("metadata_columns_section")
+            if buf is None:
+                # An empty TCOL is still a valid state (no metadata
+                # ever added) — surface it as an empty MetadataColumns.
+                return MetadataColumns.from_dict({})
+            decoded = _sec.decode_tcol_section(buf)
+            return MetadataColumns.from_dict(decoded.get("columns_json", {}))
         return MetadataColumns.from_dict(self.manifest.get("metadata_columns", {}))
 
     def audit_log(self) -> AuditLog:
-        return AuditLog.from_dict(self.manifest.get("audit_log", {"entries": [], "log_root": ""}))
+        if self._is_v04():
+            from tset import sections as _sec
+
+            buf = self._section_bytes("audit_log_section")
+            if buf is None:
+                return AuditLog.from_dict({"entries": [], "log_root": ""})
+            decoded = _sec.decode_tlog_section(buf)
+            return AuditLog.from_dict(decoded["audit_json"])
+        return AuditLog.from_dict(
+            self.manifest.get("audit_log", {"entries": [], "log_root": ""})
+        )
