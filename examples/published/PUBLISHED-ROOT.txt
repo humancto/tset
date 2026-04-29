@@ -1,0 +1,30 @@
+TSET published-corpus receipt
+=============================
+
+Built from        : github.com/karpathy/char-rnn (TinyShakespeare)
+Source SHA-256    : 86c4e6aa9db7c042ec79f339dcb96d42b0075e16b8fc2e86bf0ca57e2dc565ed
+Paragraphs taken  : first 200 (of 7,222)
+Tokenizer view    : byte-level-v1
+
+--- on-disk artefact ---
+Path              : examples/published/corpus.tset
+Size              : 188,540 bytes
+
+--- receipts ---
+shard_merkle_root : 9aaf829b410a26085a5e0fd30b8c130c58771dec25fb5f760f4d4a5494b623ab
+smt_root          : 369cf1fbacb1af433d2ea84ead6aa326eba6bd4698f872304a533444a5815444
+manifest_hash     : 7e787dc584ba7a4769414a81415dbc172c89a529ddc941405e9a3629f6449328
+document_count    : 200
+audit_log_entries : 202
+first_doc_hash    : 912c26a1450aa0860809fff28ad9b34b2c6779b336f6c28f809276f571f3aece
+
+--- determinism ---
+To reproduce, set:
+  TSET_DETERMINISTIC_CREATED_AT=2026-01-01T00:00:00+00:00
+  TSET_DETERMINISTIC_SNAPSHOT_ID=tset-published-shakespeare-v0001
+  TSET_DETERMINISTIC_TIME=1735689600.0
+
+Then run: python -m examples.published.build
+
+Re-running on the same Python + env yields a byte-identical
+corpus.tset and the same receipts above.

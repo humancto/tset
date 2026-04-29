@@ -247,6 +247,56 @@ for tokens, doc_hash in DataLoader(ds, batch_size=None):
 
 ---
 
+## Verify a published corpus in 10 seconds
+
+A real, deterministically-built TSET shard ships in this repo and is
+served by GitHub raw. Anyone can fetch and verify it without trusting
+us:
+
+```bash
+pip install tset
+python -m examples.published.verify \
+  https://raw.githubusercontent.com/humancto/tset/main/examples/published/corpus.tset \
+  --expected-smt-root=369cf1fbacb1af433d2ea84ead6aa326eba6bd4698f872304a533444a5815444
+```
+
+The verifier opens the shard, generates an inclusion proof for one
+document and a non-inclusion proof for an absent hash, rejects a
+tampered proof, verifies the audit-log chain, and pins the SMT root.
+30 lines of code, no library dependencies beyond `tset`. See
+[`examples/published/`](examples/published/) for the source.
+
+---
+
+## Real tokenizer recipe (BPE / SentencePiece)
+
+Production training pipelines run BPE or SentencePiece, not byte-level
+or whitespace. The HuggingFace `tokenizers` adapter ships in
+`tset.hf_tokenizer`; a runnable end-to-end recipe lives at
+[`examples/recipes/hf_tokenizer_bpe.py`](examples/recipes/hf_tokenizer_bpe.py)
+and walks through:
+
+1. Train (or load) a HF BPE tokenizer
+2. Wrap it with `HfTokenizer` so it satisfies the `tset.tokenizers.Tokenizer` protocol
+3. Write a TSET shard with that view
+4. Verify byte-identical re-tokenization via `Reader.verify_tokenizer_view`
+5. Save the tokenizer JSON alongside; re-load and confirm the `hf_state_digest` matches
+
+```bash
+pip install tset tokenizers
+python -m examples.recipes.hf_tokenizer_bpe
+```
+
+For pretrained tokenizers from the HF Hub, replace step 1 with:
+
+```python
+from tokenizers import Tokenizer
+hf = Tokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
+wrapped = HfTokenizer(hf, tokenizer_id="qwen2-5-0-5b")
+```
+
+---
+
 ## Reference compliance workflow
 
 For maintainers facing a regulator, an internal review board, or a

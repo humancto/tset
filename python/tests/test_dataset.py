@@ -169,6 +169,93 @@ def test_malformed_exclusion_hex_is_rejected(tmp_path):
         ds.dataset_merkle_root()
 
 
+def test_subset_weights_change_dataset_root(tmp_path):
+    """Subset weights are transitively bound into the dataset Merkle root.
+
+    Per the README: "the dataset Merkle root binds shards + exclusions
+    + subset weights into a single hash". Subsets live inside each
+    shard's manifest, the manifest is hashed into the shard's
+    ``manifest_hash``, ``manifest_hash`` flows through
+    ``_shard_hash_for_dataset`` into a leaf of ``shards_subroot``, and
+    that's a component of the composite dataset root. So changing a
+    subset weight on any shard MUST change the dataset Merkle root.
+
+    The test runs three datasets with EVERYTHING ELSE (shard_id,
+    doc content, snapshot_id, audit-log timestamps, manifest
+    created_at) pinned so the only varying input is ``default_weight``.
+    The control assertion (same weight → same root) proves the test is
+    not vacuous; the experimental assertion (different weight →
+    different root) is the actual binding contract.
+
+    Codex P1 finding on PR #12: the previous shape used
+    ``DatasetWriter.shard_writer(name)`` which doesn't pin shard_id —
+    so the random uuid4 in the writer made the test pass for *any*
+    pair of datasets, masking real regressions in the binding chain.
+    The fix below uses ``Writer(path, shard_id=...)`` directly.
+    """
+    import os
+
+    from tset.dataset import _shard_hash_for_dataset
+    from tset.writer import Writer
+
+    monkey = {
+        "TSET_DETERMINISTIC_CREATED_AT": "2026-01-01T00:00:00+00:00",
+        "TSET_DETERMINISTIC_SNAPSHOT_ID": "fixed",
+        "TSET_DETERMINISTIC_TIME": "1735689600.0",
+    }
+    saved = {k: os.environ.get(k) for k in monkey}
+    for k, v in monkey.items():
+        os.environ[k] = v
+
+    def build(root, weight: float) -> bytes:
+        os.makedirs(os.path.join(str(root), "shards"))
+        shard_path = os.path.join(str(root), "shards", "only.tset")
+        with Writer(shard_path, shard_id="fixed-shard-id") as sw:
+            sw.add_document(b"alpha", metadata={"lang": "en"})
+            sw.add_document(b"beta", metadata={"lang": "fr"})
+            sw.add_subset("english", "lang = 'en'", default_weight=weight)
+            sw.add_tokenizer_view(ByteLevelTokenizer())
+        with DatasetWriter(str(root)) as dw:
+            dw.register_shard("only")
+        return Dataset(str(root)).dataset_merkle_root()
+
+    try:
+        # Control: same weight → same root. If this fails, the test
+        # environment isn't deterministic enough to attribute the
+        # experimental result below to the weight change.
+        root_a = build(tmp_path / "a", 0.7)
+        root_a_again = build(tmp_path / "a_again", 0.7)
+        assert root_a == root_a_again, (
+            "control: identical inputs produced different roots; "
+            "non-determinism is leaking and the experimental assertion "
+            "would be vacuous"
+        )
+
+        # Experiment: different weight → different root. This is the
+        # binding contract.
+        root_b = build(tmp_path / "b", 0.3)
+        assert root_a != root_b, (
+            "subset weight change did not propagate to the dataset Merkle "
+            "root; the transitive binding via manifest_hash → shard_hash "
+            "→ shards_subroot → dataset_root is broken"
+        )
+
+        # Belt-and-braces: pin the chain at the per-shard leaf so a
+        # regression that broke ``_shard_hash_for_dataset`` but somehow
+        # preserved root-level differences would still fail loudly.
+        ds_a = Dataset(str(tmp_path / "a"))
+        ds_b = Dataset(str(tmp_path / "b"))
+        h_a = _shard_hash_for_dataset(ds_a.shard_paths()[0])
+        h_b = _shard_hash_for_dataset(ds_b.shard_paths()[0])
+        assert h_a != h_b
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def test_legacy_v01_manifest_uses_shards_only_root(tmp_path):
     """Backward compat: a manifest claiming version='0.1.0' must verify
     with the legacy shards-only computation, even after the fix lands.
