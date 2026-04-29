@@ -108,9 +108,19 @@ def audit(
             )
 
     # ── (2) inclusion proof for a real document ────────────────────
+    # Empty shards are valid. When --check-doc-hash is omitted we auto-
+    # pick the first ingested doc; on an empty shard there's nothing to
+    # pick, so we record a "skipped" receipt and continue to (3) and
+    # (4) instead of raising StopIteration. (Codex P2 on PR #14.)
     target_hash = check_doc_hash
     if target_hash is None:
-        target_hash = next(iter(r.documents()))[0]
+        target_hash = next(iter(r.documents()), (None, None))[0]
+        if target_hash is None:
+            rep.receipts.append({
+                "type": "inclusion_proof",
+                "skipped": True,
+                "reason": "shard has zero documents — nothing to prove inclusion of",
+            })
     elif not r.has_document(target_hash):
         rep.failures.append(
             f"--check-doc-hash {target_hash.hex()} not in this shard "

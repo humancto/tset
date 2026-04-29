@@ -91,3 +91,28 @@ def test_audit_rejects_check_doc_hash_for_absent_doc():
     rep = audit(FIXTURE, check_doc_hash=b"\xee" * 32)
     assert not rep.ok
     assert any("not in this shard" in f for f in rep.failures)
+
+
+def test_audit_handles_empty_shard_without_crashing():
+    """Codex P2 on PR #14: empty shards are valid; the verifier must
+    NOT raise StopIteration when --check-doc-hash is omitted and the
+    shard has zero documents. It records a skipped inclusion receipt
+    and continues with non-inclusion + audit-log."""
+    pytest.importorskip("tset")
+    sys.path.insert(0, str(REPO))
+    from examples.compliance.audit import audit
+
+    empty_fixture = REPO / "tests" / "conformance" / "fixtures" / "fixture-empty.tset"
+    if not empty_fixture.is_file():
+        pytest.skip(f"empty fixture not present at {empty_fixture}")
+
+    rep = audit(empty_fixture)
+    # Inclusion was skipped, not failed — empty shards are a valid edge
+    incl = next((r for r in rep.receipts if r["type"] == "inclusion_proof"), None)
+    assert incl is not None and incl.get("skipped") is True, (
+        f"expected an inclusion_proof receipt with skipped=True; got {rep.receipts}"
+    )
+    # The other receipts still ran (non-inclusion, audit log)
+    types = {r["type"] for r in rep.receipts if not r.get("skipped")}
+    assert "non_inclusion_proof" in types
+    assert "audit_log" in types
