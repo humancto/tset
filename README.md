@@ -268,6 +268,35 @@ tampered proof, verifies the audit-log chain, and pins the SMT root.
 
 ---
 
+## Real tokenizer recipe (BPE / SentencePiece)
+
+Production training pipelines run BPE or SentencePiece, not byte-level
+or whitespace. The HuggingFace `tokenizers` adapter ships in
+`tset.hf_tokenizer`; a runnable end-to-end recipe lives at
+[`examples/recipes/hf_tokenizer_bpe.py`](examples/recipes/hf_tokenizer_bpe.py)
+and walks through:
+
+1. Train (or load) a HF BPE tokenizer
+2. Wrap it with `HfTokenizer` so it satisfies the `tset.tokenizers.Tokenizer` protocol
+3. Write a TSET shard with that view
+4. Verify byte-identical re-tokenization via `Reader.verify_tokenizer_view`
+5. Save the tokenizer JSON alongside; re-load and confirm the `hf_state_digest` matches
+
+```bash
+pip install tset tokenizers
+python -m examples.recipes.hf_tokenizer_bpe
+```
+
+For pretrained tokenizers from the HF Hub, replace step 1 with:
+
+```python
+from tokenizers import Tokenizer
+hf = Tokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
+wrapped = HfTokenizer(hf, tokenizer_id="qwen2-5-0-5b")
+```
+
+---
+
 ## What this format is *not* (read this before pitching it as compliance)
 
 TSET makes **integrity** claims, not **authenticity** claims. See [RFC §5.7](RFC.md).
