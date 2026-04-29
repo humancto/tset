@@ -81,7 +81,22 @@ def main(argv: list[str]) -> int:
     for k, v in versions.items():
         print(f"  {k:<{pad}}  {v or '(MISSING)'}")
 
-    distinct = {v for v in versions.values() if v}
+    # Treat a missing/unparseable version as a hard failure. Previously
+    # we filtered None out before the distinct check, which let a file
+    # whose version we couldn't read silently pass the gate as long as
+    # the remaining files agreed — exactly the drift this script is
+    # supposed to catch.
+    missing = [k for k, v in versions.items() if not v]
+    if missing:
+        print(
+            "\nFAIL: could not parse a version from "
+            f"{len(missing)} of {len(versions)} files:"
+        )
+        for k in missing:
+            print(f"  - {k}")
+        return 1
+
+    distinct = set(versions.values())
     if len(distinct) != 1:
         print("\nFAIL: versions disagree")
         return 1
