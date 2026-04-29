@@ -312,6 +312,30 @@ to your stack — for example `Tokenizer.from_pretrained` (HF Hub),
 
 ---
 
+## Cookbook
+
+Five short, runnable recipes that show TSET in operational shape. Each
+file is self-contained and verified by a smoke test in CI.
+
+| Recipe | What it shows |
+|---|---|
+| [`parquet_to_tset.py`](examples/cookbook/parquet_to_tset.py) | Walk a directory of `.parquet` files into a single shard with metadata columns — five-line core. |
+| [`deletion_end_to_end.py`](examples/cookbook/deletion_end_to_end.py) | Full GDPR-Article-17 chain: receive request → confirm inclusion → add exclusion → republish root → emit non-inclusion proof. |
+| [`verify_offline.py`](examples/cookbook/verify_offline.py) | Verify a shard's pinned roots without any network. Inclusion + non-inclusion proofs locally. |
+| [`multi_shard_streaming.py`](examples/cookbook/multi_shard_streaming.py) | Stream tokens across a 3-shard dataset, with the dataset-level exclusion overlay enforced. |
+| [`training_loop.py`](examples/cookbook/training_loop.py) | Pack streamed tokens into fixed-length training rows with a per-position document-boundary mask. Drop in `torch.from_numpy` and you're done. |
+
+```bash
+pip install tset pyarrow
+python -m examples.cookbook.parquet_to_tset
+python -m examples.cookbook.deletion_end_to_end
+python -m examples.cookbook.verify_offline
+python -m examples.cookbook.multi_shard_streaming
+python -m examples.cookbook.training_loop
+```
+
+---
+
 ## Reference compliance workflow
 
 For maintainers facing a regulator, an internal review board, or a
