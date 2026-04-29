@@ -131,6 +131,44 @@ def test_root_subroots_are_domain_separated(tmp_path):
     assert composite != _exclusions_subroot(ds.exclusions())
 
 
+def test_malformed_exclusion_hex_is_rejected(tmp_path):
+    """A tampered exclusions.json with non-hex content must NOT silently
+    collapse to an empty leaf. Python's ``bytes.fromhex`` raises
+    ``ValueError``; Rust returns ``TsetError::BadManifest``. Both
+    impls reject so cross-impl verification can't diverge on bad
+    overlays — matches the Codex P2 finding on PR #8.
+    """
+    import json as _json
+
+    from tset.dataset import EXCLUSIONS_NAME
+
+    root = tmp_path / "ds"
+    with DatasetWriter(str(root)) as dw:
+        with dw.shard_writer("only") as sw:
+            sw.add_document(b"alpha")
+            sw.add_tokenizer_view(ByteLevelTokenizer())
+        dw.register_shard("only")
+
+    # Replace the exclusions overlay with a non-hex string
+    excl_path = root / EXCLUSIONS_NAME
+    excl_path.write_text(
+        _json.dumps(
+            {
+                "snapshot_id": "manual-test",
+                "excluded_doc_hashes": ["zz" * 32],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+    ds = Dataset(str(root))
+    # Computing the root MUST raise — silent collapse to empty leaf
+    # would let two distinct invalid exclusions produce the same root.
+    with pytest.raises((ValueError, Exception)):
+        ds.dataset_merkle_root()
+
+
 def test_legacy_v01_manifest_uses_shards_only_root(tmp_path):
     """Backward compat: a manifest claiming version='0.1.0' must verify
     with the legacy shards-only computation, even after the fix lands.
