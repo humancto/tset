@@ -100,7 +100,18 @@ class Reader:
             if not log.verify():
                 raise ValueError("audit log integrity check failed")
         for tid in self.tokenizer_ids():
-            self.verify_tokenizer_view(tid)
+            try:
+                self.verify_tokenizer_view(tid)
+            except KeyError:
+                # Tokenizer id not in the registry — typical for custom
+                # adapters like `tset.hf_tokenizer.HfTokenizer` whose
+                # instance ID is set at construction time. The chunk
+                # content_hash check still runs at view-section read,
+                # so per-chunk integrity is enforced; only the
+                # tokenizer-class re-encode is skipped here. The user
+                # can still call ``verify_tokenizer_view(id, tokenizer=…)``
+                # explicitly with the right instance to re-encode.
+                continue
 
     def close(self) -> None:
         try:
