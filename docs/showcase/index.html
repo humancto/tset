@@ -169,6 +169,31 @@
 
   <p class="footnote">Reproduce: <code>python -m examples.datasets.synthetic_stream.competitive</code>. Output: <code>examples/datasets/synthetic_stream/out/competitive.json</code>.</p>
 
+  <!-- ── Verify a hosted corpus ──────────────────────────────── -->
+  <h2 style="margin-top: 56px;">Verify a hosted corpus from your terminal</h2>
+  <p>
+    A real <code>.tset</code> shard is published on this repo's <code>main</code> branch.
+    Anyone can verify the receipts in 10 seconds:
+  </p>
+  <pre class="code" style="background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 22px; margin: 20px 0; font-size: 13.5px;"><code>pip install tset
+
+python -m examples.published.verify <span class="tok-pun">\</span>
+  https://raw.githubusercontent.com/humancto/tset/main/examples/published/corpus.tset <span class="tok-pun">\</span>
+  --expected-smt-root=<span class="tok-s">369cf1fbacb1af433d2ea84ead6aa326eba6bd4698f872304a533444a5815444</span></code></pre>
+  <p>
+    Output on success: <code>opened</code>, <code>shard_merkle_root</code>,
+    <code>smt_root</code>, an inclusion proof for one document, a
+    non-inclusion proof for an absent hash, a tampered-proof rejection,
+    audit-log chain verification, and the smt_root pin match.
+  </p>
+  <p>
+    Build is deterministic — run
+    <code>python -m examples.published.build</code> on the same Python
+    and re-derive the byte-identical artefact. See
+    <a href="https://github.com/humancto/tset/tree/main/examples/published" rel="noopener" style="color: var(--cyan);">examples/published/</a>
+    for the 30-line verifier source.
+  </p>
+
   <!-- ── Per-corpus ──────────────────────────────────────────── -->
   <h2 style="margin-top: 56px;">Per-corpus ratios on real public data</h2>
 
