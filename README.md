@@ -163,6 +163,10 @@ tset inspect out.tset
 # Full integrity check: manifest hash, footer, Merkle root,
 # audit log signature, per-view reproducibility
 tset verify out.tset
+
+# Record a GDPR-Art-17 / RTBF deletion in a dataset's exclusion overlay.
+# Updates exclusions.json, dataset_merkle_root, and the audit log atomically.
+tset add-exclusion ./my-dataset.tset 912c26a1...3aece --reason "GDPR-Art-17 request 2026-04-29"
 ```
 
 ---

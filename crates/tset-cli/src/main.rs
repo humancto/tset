@@ -1,11 +1,12 @@
 //! `tset` — command-line tool for TSET shards.
 //!
 //! Subcommands:
-//!   tset inspect <path>             summarize header, manifest, views
-//!   tset verify  <path>             full open + integrity check; exit 0 on pass
-//!   tset stats   <path>             size breakdown + per-doc/per-view distributions
-//!   tset diff    <a> <b>            compare two shards: roots, docs, views, sections
-//!   tset convert jsonl <src> <dst>  build a TSET shard from a JSONL corpus
+//!   tset inspect <path>                       summarize header, manifest, views
+//!   tset verify  <path>                       full open + integrity check; exit 0 on pass
+//!   tset stats   <path>                       size breakdown + per-doc/per-view distributions
+//!   tset diff    <a> <b>                      compare two shards: roots, docs, views, sections
+//!   tset convert jsonl <src> <dst>            build a TSET shard from a JSONL corpus
+//!   tset add-exclusion <dataset> <hex_hash>   record a GDPR-Art-17 exclusion in a dataset overlay
 //!
 //! Intentionally argparse-free (no clap) so the CLI has the same minimal
 //! footprint as `tset-core`. Add clap when option surface grows.
@@ -13,9 +14,10 @@
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use tset_core::dataset::DatasetWriter;
 use tset_core::tokenizers::{ByteLevelTokenizer, Tokenizer, WhitespaceTokenizer};
 use tset_core::{Reader, Writer};
 
@@ -33,6 +35,7 @@ fn main() -> ExitCode {
         "stats" => cmd_stats(&rest),
         "diff" => cmd_diff(&rest),
         "convert" => cmd_convert(&rest),
+        "add-exclusion" => cmd_add_exclusion(&rest),
         "version" | "--version" | "-V" => {
             println!("tset {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -64,6 +67,7 @@ fn print_usage() {
     println!("    tset stats   <path>");
     println!("    tset diff    <a.tset> <b.tset>");
     println!("    tset convert jsonl <src.jsonl> <dst.tset> [--text-field FIELD] [--tokenizer ID] [--vocab N] [--binary-sections]");
+    println!("    tset add-exclusion <dataset-dir> <hex-doc-hash> [--reason \"...\"]");
     println!("    tset version");
 }
 
@@ -508,4 +512,98 @@ fn cmd_diff(args: &[&str]) -> Result<(), String> {
             differences
         ))
     }
+}
+
+// ── add-exclusion ───────────────────────────────────────────────────────
+//
+// Records a GDPR-Article-17-style exclusion in a dataset's overlay.
+// Operates on a dataset directory (containing manifest.tset.json +
+// shards/ + optionally exclusions.json) — single-shard files have an
+// immutable SMT and cannot be retroactively excluded.
+//
+// The new exclusion is appended to the audit log as a signed
+// `exclusion` event (or unsigned, if the original log was unsigned),
+// the dataset_merkle_root is recomputed under overlay version 0.3.0
+// (which binds the exclusion overlay into the root — issue #4), and
+// both manifest.tset.json and exclusions.json are rewritten.
+
+fn cmd_add_exclusion(args: &[&str]) -> Result<(), String> {
+    let dataset = args.first().ok_or(
+        "add-exclusion: missing <dataset-dir>",
+    )?;
+    let hex_hash = args.get(1).ok_or(
+        "add-exclusion: missing <hex-doc-hash>",
+    )?;
+
+    // Optional --reason "..." flag.
+    let mut reason = String::new();
+    let mut i = 2;
+    while i < args.len() {
+        let raw = args[i];
+        let (flag, inline_value): (&str, Option<&str>) = match raw.find('=') {
+            Some(eq) => (&raw[..eq], Some(&raw[eq + 1..])),
+            None => (raw, None),
+        };
+        match flag {
+            "--reason" => {
+                let value = if let Some(v) = inline_value {
+                    v.to_string()
+                } else {
+                    let v = args
+                        .get(i + 1)
+                        .ok_or("--reason needs a value")?
+                        .to_string();
+                    i += 1;
+                    v
+                };
+                reason = value;
+            }
+            other => return Err(format!("unknown flag: {other}")),
+        }
+        i += 1;
+    }
+
+    let path = PathBuf::from(dataset);
+    if path.is_file() {
+        return Err(
+            "add-exclusion: target is a single .tset file; exclusions only apply \
+             to dataset directories. Wrap the shard in a dataset directory first."
+                .into(),
+        );
+    }
+    if !path.is_dir() {
+        return Err(format!("add-exclusion: {dataset} is not a directory"));
+    }
+
+    // Decode + validate the hash early so we don't half-write state on a typo.
+    let hash_bytes = hex::decode(hex_hash)
+        .map_err(|e| format!("add-exclusion: <hex-doc-hash> is not valid hex: {e}"))?;
+    if hash_bytes.len() != 32 {
+        return Err(format!(
+            "add-exclusion: <hex-doc-hash> must decode to 32 bytes, got {}",
+            hash_bytes.len()
+        ));
+    }
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&hash_bytes);
+
+    let mut writer = DatasetWriter::open_existing(&path)
+        .map_err(|e| format!("add-exclusion: open dataset: {e}"))?;
+    let added = writer.add_exclusion(&hash, &reason);
+    writer
+        .close()
+        .map_err(|e| format!("add-exclusion: close: {e}"))?;
+
+    if added {
+        println!("recorded exclusion of {hex_hash}");
+        if !reason.is_empty() {
+            println!("  reason: {reason}");
+        }
+    } else {
+        println!(
+            "no-op: {hex_hash} was already excluded — manifest snapshot regenerated"
+        );
+    }
+    println!("  dataset_merkle_root + exclusions.json + audit log refreshed");
+    Ok(())
 }

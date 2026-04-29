@@ -249,3 +249,115 @@ fn diff_detects_different_doc_set() {
     assert!(s.contains("0 shared"));
     assert!(s.contains("only-in-a") && s.contains("only-in-b"));
 }
+
+// ── add-exclusion ───────────────────────────────────────────────────────
+
+/// Build a minimal dataset directory with a single shard registered
+/// via `DatasetWriter`, returning (root_path, doc_hash_hex_of_first_doc).
+fn make_dataset(dir: &std::path::Path) -> (std::path::PathBuf, String) {
+    use tset_core::dataset::DatasetWriter;
+    use tset_core::tokenizers::ByteLevelTokenizer;
+    use tset_core::Writer;
+
+    let root = dir.join("ds");
+    std::fs::create_dir_all(root.join("shards")).unwrap();
+    let mut w = Writer::create(root.join("shards/part-00001.tset"), None);
+    let h = w.add_document(b"alpha").unwrap();
+    w.add_document(b"beta").unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+
+    let mut dw = DatasetWriter::create(&root).unwrap();
+    dw.register_shard("part-00001").unwrap();
+    dw.close().unwrap();
+
+    (root, hex::encode(h))
+}
+
+#[test]
+fn add_exclusion_records_hash_in_overlay() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, hex) = make_dataset(dir.path());
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg(&hex)
+        .args(["--reason", "GDPR-Art-17 request 2026-04-29"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "add-exclusion failed: {out:?}");
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains(&format!("recorded exclusion of {hex}")));
+    assert!(s.contains("reason: GDPR-Art-17"));
+
+    let excl = std::fs::read_to_string(root.join("exclusions.json")).unwrap();
+    assert!(excl.contains(&hex));
+    let manifest = std::fs::read_to_string(root.join("manifest.tset.json")).unwrap();
+    assert!(manifest.contains("\"exclusion_count\": 1"));
+}
+
+#[test]
+fn add_exclusion_is_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, hex) = make_dataset(dir.path());
+    cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg(&hex)
+        .output()
+        .unwrap();
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg(&hex)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("no-op"), "expected no-op message, got:\n{s}");
+
+    let excl = std::fs::read_to_string(root.join("exclusions.json")).unwrap();
+    // Hash appears exactly once
+    assert_eq!(excl.matches(&hex).count(), 1);
+}
+
+#[test]
+fn add_exclusion_rejects_single_shard_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("in.jsonl");
+    let dst = dir.path().join("out.tset");
+    std::fs::write(&src, "{\"text\": \"alpha\"}\n").unwrap();
+    cli()
+        .args(["convert", "jsonl"])
+        .arg(&src)
+        .arg(&dst)
+        .output()
+        .unwrap();
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&dst)
+        .arg(&"ab".repeat(32))
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let s = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        s.contains("single .tset file"),
+        "expected single-file rejection, got:\n{s}"
+    );
+}
+
+#[test]
+fn add_exclusion_rejects_invalid_hex() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, _) = make_dataset(dir.path());
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg("not-hex")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let s = String::from_utf8_lossy(&out.stderr);
+    assert!(s.contains("not valid hex"));
+}

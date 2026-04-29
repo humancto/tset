@@ -133,6 +133,58 @@ impl AuditLog {
         }
         out
     }
+
+    /// Reconstruct an unsigned `AuditLog` from a serialized log JSON
+    /// (the shape produced by `to_json`). Used by writers that re-open
+    /// an existing dataset to extend its audit log. Signature
+    /// verification is the caller's responsibility — this constructor
+    /// only restores the chain.
+    pub fn from_json(v: &Value) -> Self {
+        let log_root = v
+            .get("log_root")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let mut entries: Vec<AuditEntry> = Vec::new();
+        if let Some(arr) = v.get("entries").and_then(Value::as_array) {
+            for e in arr {
+                entries.push(AuditEntry {
+                    seq: e.get("seq").and_then(Value::as_u64).unwrap_or(0),
+                    timestamp: e.get("timestamp").and_then(Value::as_f64).unwrap_or(0.0),
+                    event_type: e
+                        .get("event_type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    payload: e.get("payload").cloned().unwrap_or(Value::Null),
+                    prev_root: e
+                        .get("prev_root")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    entry_hash: e
+                        .get("entry_hash")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    chained_root: e
+                        .get("chained_root")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    signature: e
+                        .get("signature")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                });
+            }
+        }
+        Self {
+            entries,
+            log_root,
+            signer: None,
+        }
+    }
 }
 
 pub fn verify_audit_log(audit: &Value) -> bool {

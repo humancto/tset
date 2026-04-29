@@ -176,6 +176,21 @@ impl ShardEntry {
             "total_tokens_per_view": Value::Object(self.total_tokens_per_view.clone()),
         })
     }
+
+    pub fn from_json(v: &Value) -> Self {
+        Self {
+            shard_id: v.get("shard_id").and_then(Value::as_str).unwrap_or("").to_string(),
+            relpath: v.get("relpath").and_then(Value::as_str).unwrap_or("").to_string(),
+            shard_hash: v.get("shard_hash").and_then(Value::as_str).unwrap_or("").to_string(),
+            shard_smt_root: v.get("shard_smt_root").and_then(Value::as_str).unwrap_or("").to_string(),
+            doc_count: v.get("doc_count").and_then(Value::as_u64).unwrap_or(0),
+            total_tokens_per_view: v
+                .get("total_tokens_per_view")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default(),
+        }
+    }
 }
 
 pub struct Dataset {
@@ -264,34 +279,7 @@ impl Dataset {
             .ok_or(TsetError::BadManifest("dataset manifest.shards"))?;
         let mut entries = Vec::new();
         for s in arr {
-            entries.push(ShardEntry {
-                shard_id: s
-                    .get("shard_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                relpath: s
-                    .get("relpath")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                shard_hash: s
-                    .get("shard_hash")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                shard_smt_root: s
-                    .get("shard_smt_root")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                doc_count: s.get("doc_count").and_then(Value::as_u64).unwrap_or(0),
-                total_tokens_per_view: s
-                    .get("total_tokens_per_view")
-                    .and_then(Value::as_object)
-                    .cloned()
-                    .unwrap_or_default(),
-            });
+            entries.push(ShardEntry::from_json(s));
         }
         // Pick the computation that matches the overlay version this
         // dataset was written with. Legacy datasets (v0.1.0) keep the
@@ -534,6 +522,55 @@ impl DatasetWriter {
         })
     }
 
+    /// Re-open an existing dataset for extension. Mirrors the Python
+    /// `DatasetWriter(root, load_existing=True)` contract: prior shard
+    /// registrations, prior exclusions, and the existing audit log are
+    /// restored so a subsequent `add_exclusion` / `register_shard` /
+    /// `close` produces a well-formed v0.3.0 dataset that's a
+    /// continuation, not a fresh start.
+    ///
+    /// Use this when adding an exclusion to a dataset that's already
+    /// been closed (the standard `tset add-exclusion` CLI flow).
+    pub fn open_existing<P: AsRef<Path>>(root: P) -> TsetResult<Self> {
+        let root = root.as_ref().to_path_buf();
+        fs::create_dir_all(root.join(SHARDS_DIRNAME))?;
+        let manifest_path = root.join(DATASET_MANIFEST_NAME);
+        let mut shards: Vec<ShardEntry> = Vec::new();
+        let mut audit = AuditLog::new();
+        if manifest_path.exists() {
+            let bytes = fs::read(&manifest_path)?;
+            let manifest: Value = serde_json::from_slice(&bytes)?;
+            if let Some(arr) = manifest.get("shards").and_then(Value::as_array) {
+                for s in arr {
+                    shards.push(ShardEntry::from_json(s));
+                }
+            }
+            if let Some(audit_json) = manifest.get("audit_log") {
+                audit = AuditLog::from_json(audit_json);
+            }
+        }
+        let mut exclusions = BTreeSet::new();
+        let excl_path = root.join(EXCLUSIONS_NAME);
+        if excl_path.exists() {
+            let raw = fs::read(&excl_path)?;
+            let excl: Value = serde_json::from_slice(&raw)?;
+            if let Some(arr) = excl.get("excluded_doc_hashes").and_then(Value::as_array) {
+                for h in arr {
+                    if let Some(s) = h.as_str() {
+                        exclusions.insert(s.to_string());
+                    }
+                }
+            }
+        }
+        Ok(Self {
+            root,
+            shards,
+            exclusions,
+            audit,
+            closed: false,
+        })
+    }
+
     /// Path where a shard with the given name will be written. Caller
     /// uses the regular `Writer` to populate it.
     pub fn shard_path(&self, name: &str) -> PathBuf {
@@ -577,7 +614,16 @@ impl DatasetWriter {
         Ok(self.shards.last().unwrap())
     }
 
-    pub fn add_exclusion(&mut self, doc_hash: &Hash, reason: &str) {
+    /// Read-only view of the current exclusion set. Used by callers
+    /// that need to distinguish "newly excluded" from "already
+    /// excluded" (e.g. the `tset add-exclusion` CLI's no-op message).
+    pub fn exclusions(&self) -> &BTreeSet<String> {
+        &self.exclusions
+    }
+
+    /// Returns `true` if the hash was newly excluded, `false` if it
+    /// was already in the overlay (no-op, no audit entry appended).
+    pub fn add_exclusion(&mut self, doc_hash: &Hash, reason: &str) -> bool {
         let h = hex::encode(doc_hash);
         if self.exclusions.insert(h.clone()) {
             self.audit.append(
@@ -585,6 +631,9 @@ impl DatasetWriter {
                 json!({"doc_hash": h, "reason": reason}),
                 current_timestamp(),
             );
+            true
+        } else {
+            false
         }
     }
 
