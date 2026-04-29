@@ -169,6 +169,63 @@ def test_malformed_exclusion_hex_is_rejected(tmp_path):
         ds.dataset_merkle_root()
 
 
+def test_subset_weights_change_dataset_root(tmp_path):
+    """Subset weights are transitively bound into the dataset Merkle root.
+
+    Per the README: "the dataset Merkle root binds shards + exclusions
+    + subset weights into a single hash". Subsets live inside each
+    shard's manifest, the manifest is hashed into the shard's
+    ``manifest_hash``, ``manifest_hash`` flows through
+    ``_shard_hash_for_dataset`` into a leaf of ``shards_subroot``, and
+    that's a component of the composite dataset root. So changing a
+    subset weight on any shard MUST change the dataset Merkle root.
+
+    This test pins that property: build two datasets with identical
+    document content but different subset default weights, and assert
+    the dataset roots differ.
+    """
+    import os
+
+    # Determinism: keep audit-log timestamps stable so any difference
+    # we observe between the two datasets is attributable to the
+    # subset weight, not to wall-clock noise.
+    monkey = {
+        "TSET_DETERMINISTIC_CREATED_AT": "2026-01-01T00:00:00+00:00",
+        "TSET_DETERMINISTIC_SNAPSHOT_ID": "fixed",
+        "TSET_DETERMINISTIC_TIME": "1735689600.0",
+    }
+    saved = {k: os.environ.get(k) for k in monkey}
+    for k, v in monkey.items():
+        os.environ[k] = v
+    try:
+        roots: list[bytes] = []
+        for label, weight in [("a", 0.7), ("b", 0.3)]:
+            root = tmp_path / label
+            with DatasetWriter(str(root)) as dw:
+                with dw.shard_writer("only") as sw:
+                    sw.add_document(b"alpha", metadata={"lang": "en"})
+                    sw.add_document(b"beta", metadata={"lang": "fr"})
+                    sw.add_subset("english", "lang = 'en'", default_weight=weight)
+                    sw.add_tokenizer_view(ByteLevelTokenizer())
+                dw.register_shard("only")
+            roots.append(Dataset(str(root)).dataset_merkle_root())
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    # Same docs, different subset weight → different dataset roots.
+    # If this assertion regresses, the README's "shards + exclusions
+    # + subset weights bind to the root" promise is broken.
+    assert roots[0] != roots[1], (
+        "subset weight change did not propagate to the dataset Merkle root; "
+        "the transitive binding via manifest_hash → shard_hash → "
+        "shards_subroot → dataset_root is broken"
+    )
+
+
 def test_legacy_v01_manifest_uses_shards_only_root(tmp_path):
     """Backward compat: a manifest claiming version='0.1.0' must verify
     with the legacy shards-only computation, even after the fix lands.

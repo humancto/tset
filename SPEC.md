@@ -333,6 +333,29 @@ Conforming readers MUST:
 Conforming writers MUST emit `"version": "0.3.0"` and the composite
 `dataset_merkle_root` for every newly-written dataset manifest.
 
+### 8a.1 Subset weights and other per-shard manifest fields
+
+Subset definitions and their `default_weight` values live inside each
+shard's manifest. They are committed to the dataset Merkle root
+**transitively**: the per-shard `manifest_hash` covers the entire
+manifest JSON (including `subsets[]`), and `manifest_hash` is fed into
+`shard_hash_for_dataset` as `BLAKE3(0x20 || manifest_hash || shard_merkle_root)`.
+That hash is the ``shard_hash`` field of every leaf in `shards_subroot`,
+so:
+
+- Adding, removing, or re-weighting a subset on any shard
+- Changing any other field of any shard's manifest
+
+…changes the dataset Merkle root. Tested under
+`python/tests/test_dataset.py::test_subset_weights_change_dataset_root`.
+
+The same logic applies to every per-shard manifest field, including
+the documents index, view chunk metadata, audit log, and binary
+section pointers. The dataset root is therefore a complete commitment
+to the directory contents at version-snapshot time; readers cannot
+silently substitute a re-weighted shard without also breaking the
+`shard_hash` leaves above them.
+
 ## 9. Out of scope for this version
 
 The following are deferred and not part of v0.1 binary layout:
