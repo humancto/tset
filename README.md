@@ -322,7 +322,9 @@ chain status. Five public APIs total, ~200 lines of script.
 
 ## What this format is *not* (read this before pitching it as compliance)
 
-TSET makes **integrity** claims, not **authenticity** claims. See [RFC §5.7](RFC.md).
+TSET makes **integrity** claims, not **authenticity** claims. See [RFC §5.7](RFC.md)
+and the full security accounting in
+[`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md).
 
 - It does **not** prove a document came from the URL recorded in metadata.
 - It does **not** prove a model trained on a TSET corpus has "forgotten" any document.
