@@ -259,6 +259,25 @@ The minimum diligence we'd defend in a code review:
 
 `examples/compliance/audit.py` does all five against any shard.
 
+## Continuous fuzz coverage
+
+Two `cargo-fuzz` targets run nightly via
+[`.github/workflows/fuzz.yml`](../../.github/workflows/fuzz.yml):
+
+- **`reader_open`** — feeds arbitrary bytes to `Reader::open`. The
+  contract: never panic. Either succeed (input was a valid TSET
+  shard) or return a `TsetError`. Any panic is a security bug.
+- **`sections_decode`** — feeds arbitrary bytes to the three v0.3.2
+  on-disk section decoders (`decode_tsmt_section`,
+  `decode_tlog_section`, `decode_tcol_section`). These are the
+  parser surface a verifier hits when it follows a manifest pointer
+  into hostile bytes.
+
+The corpus is cached across runs, so coverage compounds nightly. A
+crash during a run uploads the reproducer as an artefact and fails
+the workflow — see the run log if you spot a failure on the
+**Fuzz** badge.
+
 ## Reporting issues
 
 Security issues: open a private advisory on

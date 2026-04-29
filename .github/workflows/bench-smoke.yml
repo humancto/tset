@@ -1,0 +1,39 @@
+name: Bench smoke
+
+# Build all criterion benches and run them in fast mode (small sample
+# count, short measurement window). The goal is "if a bench panics or
+# becomes unbuildable, the PR fails" — not a regression gate. A real
+# regression gate needs a persistent baseline + statistical comparison,
+# which is parked until we have a stable reference machine.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: compile all benches
+        run: cargo bench -p tset-bench --no-run
+      # Criterion 0.5 uses --sample-size and --measurement-time. We
+      # cap both so the smoke run takes ~1-2 min total; the goal is
+      # to confirm each bench can complete one full iteration on a
+      # cold fresh tree.
+      - name: smoke-run streaming bench
+        run: cargo bench -p tset-bench --bench streaming -- --sample-size 10 --measurement-time 2 --warm-up-time 1
+      - name: smoke-run writer bench
+        run: cargo bench -p tset-bench --bench writer -- --sample-size 10 --measurement-time 2 --warm-up-time 1
+      - name: smoke-run smt bench
+        run: cargo bench -p tset-bench --bench smt -- --sample-size 10 --measurement-time 2 --warm-up-time 1
+      - name: smoke-run proofs bench
+        run: cargo bench -p tset-bench --bench proofs -- --sample-size 10 --measurement-time 2 --warm-up-time 1

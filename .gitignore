@@ -20,3 +20,4 @@ fuzz/artifacts/
 # tree — they aren't bound by ours.
 !Cargo.lock
 
+fuzz/Cargo.lock
