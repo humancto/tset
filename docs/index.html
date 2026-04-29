@@ -356,6 +356,22 @@
         <h3>Byte-identical re-tokenization.</h3>
         <p>Cross-impl conformance fixtures lock the wire format. Byte-for-byte.</p>
       </div>
+
+      <div class="b feat b-wide">
+        <div class="ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1018 0 9 9 0 10-18 0"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>
+          </svg>
+        </div>
+        <span class="tag">Drop-in for HuggingFace datasets</span>
+        <h3>Two functions. Existing pipelines untouched.</h3>
+        <p style="margin-bottom: 14px;">
+          <code>tset.hf.to_tset(hf_dataset, "out.tset")</code> ships any HuggingFace dataset as a TSET shard with one Merkle root.
+          <code>tset.hf.from_tset("corpus.tset")</code> hands it back as a regular <code>datasets.Dataset</code> &mdash; <code>map</code>, <code>filter</code>, <code>train_test_split</code> all work.
+        </p>
+        <pre class="code" style="background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 0; font-size: 12.5px; line-height: 1.55;"><code><span class="tok-k">from</span> tset.hf <span class="tok-k">import</span> from_tset, to_tset
+ds = <span class="tok-fn">from_tset</span>(<span class="tok-s">"corpus.tset"</span>, with_tokens=<span class="tok-k">True</span>)</code></pre>
+      </div>
     </div>
   </div>
 </section>
