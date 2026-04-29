@@ -217,3 +217,77 @@ def test_existing_v03_fixture_still_lacks_sections():
     assert "smt_section" not in r.manifest
     # And it still decodes without error
     assert r.tokenizer_ids() == ["byte-level-v1", "whitespace-hashed-v1"]
+
+
+def test_v04_reader_rejects_missing_section_pointers(tmp_path):
+    """Codex P2 on PR #15: v0.4 makes sections the source of truth, so
+    a manifest claiming version 0.4 but lacking section pointers is
+    malformed — not an empty state. Without this check, the reader
+    silently treated missing TLOG / TCOL as "empty log" / "no metadata
+    columns" and ``_verify_invariants`` would skip audit-log integrity
+    validation entirely. We surgically remove a section pointer from a
+    valid v0.4 shard, recompute the manifest hash, and assert the
+    reader rejects it.
+    """
+    import json
+
+    from tset.constants import HEADER_SIZE
+    from tset.hashing import hash_bytes
+    from tset.header import Header
+
+    p = str(tmp_path / "v04-malformed.tset")
+    with Writer(p) as w:
+        w.enable_binary_sections()
+        w.add_document(b"alpha")
+        w.add_tokenizer_view(ByteLevelTokenizer())
+
+    raw = open(p, "rb").read()
+    header = Header.decode(raw[:HEADER_SIZE])
+    assert header.version_minor == 4
+    manifest_bytes = raw[
+        header.manifest_offset : header.manifest_offset + header.manifest_size
+    ]
+    manifest = json.loads(manifest_bytes)
+    # Drop the audit_log_section pointer — every v0.4 shard MUST have it.
+    del manifest["audit_log_section"]
+    new_bytes = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    new_bytes = new_bytes + b" " * (header.manifest_size - len(new_bytes))
+    assert len(new_bytes) == header.manifest_size
+
+    patched = bytearray(raw)
+    patched[
+        header.manifest_offset : header.manifest_offset + header.manifest_size
+    ] = new_bytes
+    new_hash = hash_bytes(bytes(new_bytes))
+    patched[64:96] = new_hash
+    patched[-40 + 8 : -40 + 36] = new_hash[:28]
+    open(p, "wb").write(bytes(patched))
+
+    with pytest.raises(ValueError, match="audit_log_section"):
+        Reader(p)
+
+
+def test_v03_writer_keeps_manifest_version_field_in_sync_with_header():
+    """Codex P1 on PR #15: when writing legacy v0.3 (no sections), the
+    manifest's ``version`` JSON field MUST report ``0.3.0`` even though
+    the in-Python VERSION_MINOR constant is now 4. Without the explicit
+    overwrite, tooling that reads the manifest's version field for
+    compatibility / reporting would see ``0.4.0`` on a v0.3 shard.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "v03.tset")
+        with Writer(p) as w:
+            # No enable_binary_sections() — legacy v0.3 path
+            w.add_document(b"alpha")
+            w.add_tokenizer_view(ByteLevelTokenizer())
+
+        r = Reader(p)
+        assert r.header.version_minor == 3
+        assert r.manifest["version"] == "0.3.0", (
+            f"v0.3 shard manifest version should be '0.3.0'; "
+            f"got {r.manifest['version']!r}"
+        )

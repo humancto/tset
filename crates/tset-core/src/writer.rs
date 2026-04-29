@@ -423,6 +423,15 @@ impl Writer {
         }
 
         let effective_version_minor = if emit_binary_sections { 4 } else { 3 };
+        // Keep the manifest's "version" string in sync with the header
+        // minor we're about to write — empty_manifest() seeded it from
+        // the compile-time VERSION_MINOR constant (now 4), which would
+        // mislabel a legacy v0.3 shard as 0.4.0 in tooling that reads
+        // the manifest field for reporting.
+        manifest.insert(
+            "version".into(),
+            json!(format!("{VERSION_MAJOR}.{effective_version_minor}.0")),
+        );
 
         let manifest_value = Value::Object(manifest);
         let manifest_bytes = canonical_json(&manifest_value).into_bytes();

@@ -351,9 +351,13 @@ class Reader:
 
             buf = self._section_bytes("metadata_columns_section")
             if buf is None:
-                # An empty TCOL is still a valid state (no metadata
-                # ever added) — surface it as an empty MetadataColumns.
-                return MetadataColumns.from_dict({})
+                # v0.4 makes sections the source of truth; a missing
+                # pointer is a malformed manifest, not an empty state.
+                # An empty columns set still serializes as a present
+                # TCOL section with row_count=0. (Codex P2 on PR #15.)
+                raise ValueError(
+                    "v0.4 shard missing metadata_columns_section pointer"
+                )
             decoded = _sec.decode_tcol_section(buf)
             return MetadataColumns.from_dict(decoded.get("columns_json", {}))
         return MetadataColumns.from_dict(self.manifest.get("metadata_columns", {}))
@@ -364,7 +368,14 @@ class Reader:
 
             buf = self._section_bytes("audit_log_section")
             if buf is None:
-                return AuditLog.from_dict({"entries": [], "log_root": ""})
+                # Same reasoning as metadata_columns: missing pointer in
+                # v0.4 is malformed, not "no log". An empty log still
+                # serializes as a present TLOG section with zero entries.
+                # Without this check, _verify_invariants silently skipped
+                # audit-log integrity validation. (Codex P2 on PR #15.)
+                raise ValueError(
+                    "v0.4 shard missing audit_log_section pointer"
+                )
             decoded = _sec.decode_tlog_section(buf)
             return AuditLog.from_dict(decoded["audit_json"])
         return AuditLog.from_dict(
