@@ -5,14 +5,20 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Python bindings (PyO3) for the tset-core Rust implementation"
+homepage.workspace = true
+documentation = "https://github.com/humancto/tset/tree/main/crates/tset-py"
+readme = "README.md"
+keywords = ["llm", "training-data", "pyo3", "merkle-tree", "tokenizer"]
+categories = ["api-bindings", "encoding"]
+rust-version.workspace = true
+description = "PyO3 bindings for tset-core: the native engine behind the `tset` Python wheel."
 
 [lib]
 name = "tset_rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-tset-core = { path = "../tset-core" }
+tset-core = { path = "../tset-core", version = "0.3.2" }
 pyo3 = { workspace = true }
 hex = { workspace = true }
 serde_json = { workspace = true }

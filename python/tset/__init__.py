@@ -7,7 +7,15 @@ that have not yet shipped are guarded so partial trees still import cleanly.
 from tset.constants import VERSION_MAJOR, VERSION_MINOR, MAGIC_HEADER, MAGIC_FOOTER
 
 __all__ = ["VERSION_MAJOR", "VERSION_MINOR", "MAGIC_HEADER", "MAGIC_FOOTER"]
-__version__ = "0.1.0"
+
+# Sourced from the installed package metadata so a single source of truth
+# (pyproject.toml) drives both the wheel name and __version__.
+try:
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("tset")
+except Exception:  # noqa: BLE001 — uninstalled tree, fall back to wire spec
+    __version__ = f"{VERSION_MAJOR}.{VERSION_MINOR}.0+local"
 
 
 def _maybe(name: str, attrs: list[str]) -> None:

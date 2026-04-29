@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "tset-bench"
-version = "0.2.0"
+version = "0.3.2"
 dependencies = [
  "criterion",
  "serde_json",
@@ -947,7 +947,7 @@ dependencies = [
 
 [[package]]
 name = "tset-cli"
-version = "0.2.0"
+version = "0.3.2"
 dependencies = [
  "hex",
  "serde_json",
@@ -957,7 +957,7 @@ dependencies = [
 
 [[package]]
 name = "tset-core"
-version = "0.2.0"
+version = "0.3.2"
 dependencies = [
  "blake3",
  "ed25519-dalek",
@@ -975,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "tset-py"
-version = "0.2.0"
+version = "0.3.2"
 dependencies = [
  "hex",
  "pyo3",
