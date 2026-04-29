@@ -1,9 +1,11 @@
 //! `tset` — command-line tool for TSET shards.
 //!
 //! Subcommands:
-//!   tset inspect <path>           summarize header, manifest, views
-//!   tset verify <path>            full open + integrity check; exit 0 on pass
-//!   tset convert jsonl <src> <dst>   build a TSET shard from a JSONL corpus
+//!   tset inspect <path>             summarize header, manifest, views
+//!   tset verify  <path>             full open + integrity check; exit 0 on pass
+//!   tset stats   <path>             size breakdown + per-doc/per-view distributions
+//!   tset diff    <a> <b>            compare two shards: roots, docs, views, sections
+//!   tset convert jsonl <src> <dst>  build a TSET shard from a JSONL corpus
 //!
 //! Intentionally argparse-free (no clap) so the CLI has the same minimal
 //! footprint as `tset-core`. Add clap when option surface grows.
@@ -28,6 +30,8 @@ fn main() -> ExitCode {
     let result = match cmd {
         "inspect" => cmd_inspect(&rest),
         "verify" => cmd_verify(&rest),
+        "stats" => cmd_stats(&rest),
+        "diff" => cmd_diff(&rest),
         "convert" => cmd_convert(&rest),
         "version" | "--version" | "-V" => {
             println!("tset {}", env!("CARGO_PKG_VERSION"));
@@ -56,7 +60,9 @@ fn print_usage() {
     );
     println!("USAGE:");
     println!("    tset inspect <path>");
-    println!("    tset verify <path>");
+    println!("    tset verify  <path>");
+    println!("    tset stats   <path>");
+    println!("    tset diff    <a.tset> <b.tset>");
     println!("    tset convert jsonl <src.jsonl> <dst.tset> [--text-field FIELD] [--tokenizer ID] [--vocab N] [--binary-sections]");
     println!("    tset version");
 }
@@ -226,4 +232,278 @@ fn convert_jsonl(args: &[&str]) -> Result<(), String> {
     w.close().map_err(|e| e.to_string())?;
     println!("converted {count} documents from {src} → {dst}");
     Ok(())
+}
+
+// ── stats ───────────────────────────────────────────────────────────────
+
+/// Region-by-region byte breakdown of a shard, plus per-view token totals
+/// and per-doc length distribution. Mirrors what
+/// `examples/datasets/_lib/profile_size.py` does in Python so the same
+/// answers are reachable from the CLI.
+fn cmd_stats(args: &[&str]) -> Result<(), String> {
+    let path = args.first().ok_or("stats: missing <path>")?;
+    let r = Reader::open(Path::new(path)).map_err(|e| e.to_string())?;
+    let total_size = std::fs::metadata(path)
+        .map_err(|e| format!("stat {path}: {e}"))?
+        .len();
+    let manifest = r.manifest().raw();
+
+    println!("path:                {path}");
+    println!("total_size:          {}", fmt_bytes(total_size));
+    println!(
+        "version:             {}.{}",
+        r.header.version_major, r.header.version_minor
+    );
+
+    let header_size: u64 = 4096; // SPEC §2: fixed 4 KiB header
+    let footer_size: u64 = 64; // SPEC §3: fixed 64-byte footer (for our purposes)
+
+    // Doc store: sum compressed_size of all blocks
+    let doc_store_bytes: u64 = manifest
+        .pointer("/document_store/blocks")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|b| b.get("compressed_size").and_then(|v| v.as_u64()))
+                .sum()
+        })
+        .unwrap_or(0);
+
+    // Tokenizer views: each carries view_size in the manifest.
+    let mut view_bytes: Vec<(String, u64, u64)> = Vec::new(); // (id, view_size, total_tokens)
+    if let Some(views) = manifest
+        .pointer("/tokenization_views")
+        .and_then(|v| v.as_object())
+    {
+        for (id, info) in views {
+            let view_size = info
+                .get("view_size")
+                .and_then(|v| v.as_u64())
+                .or_else(|| {
+                    info.get("chunks").and_then(|v| v.as_array()).map(|a| {
+                        a.iter()
+                            .filter_map(|c| c.get("compressed_size").and_then(|v| v.as_u64()))
+                            .sum()
+                    })
+                })
+                .unwrap_or(0);
+            let total_tokens = info
+                .get("total_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            view_bytes.push((id.clone(), view_size, total_tokens));
+        }
+    }
+    view_bytes.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut section_bytes: Vec<(&'static str, u64)> = Vec::new();
+    for (key, label) in [
+        ("smt_section", "TSMT"),
+        ("audit_log_section", "TLOG"),
+        ("metadata_columns_section", "TCOL"),
+    ] {
+        if let Some(v) = manifest.get(key) {
+            if let Some(sz) = v.get("size").and_then(|x| x.as_u64()) {
+                section_bytes.push((label, sz));
+            }
+        }
+    }
+
+    let known: u64 = header_size
+        + doc_store_bytes
+        + view_bytes.iter().map(|(_, s, _)| s).sum::<u64>()
+        + section_bytes.iter().map(|(_, s)| s).sum::<u64>()
+        + footer_size;
+    let manifest_bytes = total_size.saturating_sub(known);
+
+    println!("\nregion breakdown:");
+    print_region("header", header_size, total_size);
+    print_region("doc store", doc_store_bytes, total_size);
+    for (id, sz, _) in &view_bytes {
+        print_region(&format!("view: {id}"), *sz, total_size);
+    }
+    for (label, sz) in &section_bytes {
+        print_region(&format!("section: {label}"), *sz, total_size);
+    }
+    print_region("manifest (tail)", manifest_bytes, total_size);
+    print_region("footer", footer_size, total_size);
+
+    let docs: Vec<_> = r.doc_hashes().collect();
+    println!("\ndocuments:           {}", docs.len());
+    if let Some(blocks) = manifest
+        .pointer("/document_store/blocks")
+        .and_then(|v| v.as_array())
+    {
+        let uncompressed: u64 = blocks
+            .iter()
+            .filter_map(|b| b.get("uncompressed_size").and_then(|v| v.as_u64()))
+            .sum();
+        if uncompressed > 0 && !docs.is_empty() {
+            let avg = uncompressed / docs.len() as u64;
+            println!("avg_doc_bytes:       {avg}");
+            println!("total_doc_bytes:     {}", fmt_bytes(uncompressed));
+        }
+    }
+
+    if !view_bytes.is_empty() {
+        println!("\ntoken totals:");
+        for (id, sz, total_tokens) in &view_bytes {
+            let bytes_per_token = if *total_tokens > 0 {
+                format!("{:.2}", *sz as f64 / *total_tokens as f64)
+            } else {
+                "n/a".into()
+            };
+            println!(
+                "  - {id}: {total_tokens} tokens · view_size {} · {bytes_per_token} bytes/token",
+                fmt_bytes(*sz)
+            );
+        }
+    }
+
+    if let Some(audit) = manifest.get("audit_log") {
+        if let Some(entries) = audit.get("entries").and_then(|v| v.as_array()) {
+            println!("\naudit_log_entries:   {}", entries.len());
+        }
+    }
+
+    Ok(())
+}
+
+fn print_region(label: &str, size: u64, total: u64) {
+    let pct = if total > 0 {
+        size as f64 / total as f64 * 100.0
+    } else {
+        0.0
+    };
+    println!("  {:<28}  {:>14}   {:>5.1}%", label, fmt_bytes(size), pct);
+}
+
+fn fmt_bytes(n: u64) -> String {
+    if n < 1024 {
+        return format!("{n} B");
+    }
+    let units = ["KB", "MB", "GB", "TB"];
+    let mut f = n as f64 / 1024.0;
+    for (i, u) in units.iter().enumerate() {
+        if f < 1024.0 || i == units.len() - 1 {
+            return format!("{f:.1} {u}");
+        }
+        f /= 1024.0;
+    }
+    format!("{n} B")
+}
+
+// ── diff ────────────────────────────────────────────────────────────────
+
+/// Diff two shards: report version, root, and document/view set
+/// differences. Exit code is 0 if the shards are identical along every
+/// axis we check; non-zero otherwise. Useful for "did re-running my
+/// pipeline change anything?" CI checks.
+fn cmd_diff(args: &[&str]) -> Result<(), String> {
+    let a_path = args.first().ok_or("diff: missing <a.tset>")?;
+    let b_path = args.get(1).ok_or("diff: missing <b.tset>")?;
+    let a = Reader::open(Path::new(a_path)).map_err(|e| format!("open {a_path}: {e}"))?;
+    let b = Reader::open(Path::new(b_path)).map_err(|e| format!("open {b_path}: {e}"))?;
+
+    let mut differences: u32 = 0;
+
+    println!("a: {a_path}");
+    println!("b: {b_path}");
+    println!();
+
+    // Format version
+    let av = (a.header.version_major, a.header.version_minor);
+    let bv = (b.header.version_major, b.header.version_minor);
+    if av != bv {
+        println!("version:    a={}.{}  b={}.{}", av.0, av.1, bv.0, bv.1);
+        differences += 1;
+    } else {
+        println!("version:    {}.{}  (same)", av.0, av.1);
+    }
+
+    // shard_merkle_root
+    let ar = a.header.shard_merkle_root;
+    let br = b.header.shard_merkle_root;
+    if ar != br {
+        println!("shard_merkle_root differs:");
+        println!("  a: {}", hex::encode(ar));
+        println!("  b: {}", hex::encode(br));
+        differences += 1;
+    } else {
+        println!("shard_merkle_root:  {}  (same)", hex::encode(ar));
+    }
+
+    // smt_root
+    let ar = a.smt_root();
+    let br = b.smt_root();
+    if ar != br {
+        println!("smt_root differs:");
+        println!("  a: {}", hex::encode(ar));
+        println!("  b: {}", hex::encode(br));
+        differences += 1;
+    } else {
+        println!("smt_root:           {}  (same)", hex::encode(ar));
+    }
+
+    // Document set
+    use std::collections::HashSet;
+    let a_docs: HashSet<_> = a.doc_hashes().copied().collect();
+    let b_docs: HashSet<_> = b.doc_hashes().copied().collect();
+    let only_a: Vec<_> = a_docs.difference(&b_docs).collect();
+    let only_b: Vec<_> = b_docs.difference(&a_docs).collect();
+    let shared = a_docs.intersection(&b_docs).count();
+    println!(
+        "\ndocuments:  {} shared, {} only-in-a, {} only-in-b",
+        shared,
+        only_a.len(),
+        only_b.len(),
+    );
+    if !only_a.is_empty() || !only_b.is_empty() {
+        differences += 1;
+        let max_show = 10usize;
+        for (label, set) in [("only-in-a", &only_a), ("only-in-b", &only_b)] {
+            if set.is_empty() {
+                continue;
+            }
+            println!(
+                "  {label} ({} docs, showing first {}):",
+                set.len(),
+                max_show
+            );
+            for h in set.iter().take(max_show) {
+                println!("    {}", hex::encode(h));
+            }
+        }
+    }
+
+    // Tokenizer views
+    let a_views = a.tokenizer_ids().map_err(|e| e.to_string())?;
+    let b_views = b.tokenizer_ids().map_err(|e| e.to_string())?;
+    let a_set: HashSet<&String> = a_views.iter().collect();
+    let b_set: HashSet<&String> = b_views.iter().collect();
+    let only_a_v: Vec<&String> = a_set.difference(&b_set).copied().collect();
+    let only_b_v: Vec<&String> = b_set.difference(&a_set).copied().collect();
+    if !only_a_v.is_empty() || !only_b_v.is_empty() {
+        println!("\ntokenizer views:");
+        for v in only_a_v {
+            println!("  only-in-a: {v}");
+        }
+        for v in only_b_v {
+            println!("  only-in-b: {v}");
+        }
+        differences += 1;
+    } else {
+        println!("\ntokenizer views: {} (same on both)", a_views.len());
+    }
+
+    println!();
+    if differences == 0 {
+        println!("OK: shards are identical along every checked axis");
+        Ok(())
+    } else {
+        Err(format!(
+            "{} difference(s) detected — see report above",
+            differences
+        ))
+    }
 }
