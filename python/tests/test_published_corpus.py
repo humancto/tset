@@ -84,3 +84,43 @@ def test_tampered_proof_is_rejected():
         siblings=[bytes(b ^ 0xFF for b in p.siblings[0])] + p.siblings[1:],
     )
     assert not flipped.verify(r.smt_root())
+
+
+def test_verifier_cleans_up_temp_file_on_url_path(monkeypatch):
+    """Regression for Codex P2 on PR #9.
+
+    When the verifier is given a URL it downloads to a
+    NamedTemporaryFile(delete=False); the previous version never
+    unlinked the file, leaving an orphan per call. The fix wraps
+    verification in try/finally and unlinks on the way out. We exercise
+    the URL branch with a mocked urlretrieve that writes the committed
+    corpus.tset to the temp path so the rest of the verifier still
+    succeeds, then assert the temp file is gone after main() returns.
+    """
+    sys.path.insert(0, str(REPO))
+    from examples.published import verify as v
+
+    real_corpus = CORPUS.read_bytes()
+
+    def fake_urlretrieve(url, dest):
+        with open(dest, "wb") as f:
+            f.write(real_corpus)
+
+    monkeypatch.setattr("urllib.request.urlretrieve", fake_urlretrieve)
+
+    seen: list[Path] = []
+    real_resolve = v._resolve
+
+    def spy_resolve(p):
+        path, is_temp = real_resolve(p)
+        seen.append(path)
+        return path, is_temp
+
+    monkeypatch.setattr(v, "_resolve", spy_resolve)
+
+    rc = v.main(["https://example.com/corpus.tset"])
+    assert rc == 0
+    assert len(seen) == 1
+    assert not seen[0].exists(), (
+        f"verifier leaked temp file {seen[0]} — Codex P2 regression"
+    )

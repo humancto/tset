@@ -32,17 +32,24 @@ import urllib.request
 from pathlib import Path
 
 
-def _resolve(path_or_url: str) -> Path:
-    """Return a local path. Downloads to a temp file if given an URL."""
+def _resolve(path_or_url: str) -> tuple[Path, bool]:
+    """Return ``(local_path, is_temp)``.
+
+    ``is_temp=True`` when the input was a URL and we downloaded it to a
+    temp file — the caller is responsible for unlinking the path after
+    use, since ``NamedTemporaryFile(delete=False)`` does not clean up
+    on its own. The previous version of this function leaked one
+    file per URL invocation; in CI loops that fills /tmp.
+    """
     if path_or_url.startswith(("http://", "https://")):
         tmp = tempfile.NamedTemporaryFile(suffix=".tset", delete=False)
         tmp.close()
         urllib.request.urlretrieve(path_or_url, tmp.name)
-        return Path(tmp.name)
+        return Path(tmp.name), True
     p = Path(path_or_url).expanduser().resolve()
     if not p.is_file():
         sys.exit(f"error: {p} is not a file")
-    return p
+    return p, False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -59,7 +66,19 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(repo_root / "python"))
     from tset.reader import Reader
 
-    local = _resolve(args.path)
+    local, is_temp = _resolve(args.path)
+    try:
+        return _verify(local, args, Reader)
+    finally:
+        if is_temp:
+            try:
+                local.unlink()
+            except OSError:
+                # Best-effort cleanup; don't mask the verifier's exit code.
+                pass
+
+
+def _verify(local: Path, args, Reader) -> int:
     r = Reader(str(local))
 
     smt_root = r.smt_root()
