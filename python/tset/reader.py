@@ -100,18 +100,26 @@ class Reader:
             if not log.verify():
                 raise ValueError("audit log integrity check failed")
         for tid in self.tokenizer_ids():
+            # Pre-check: is the tokenizer ID known to the registry?
+            # If not, this is a custom adapter (HfTokenizer, user-defined,
+            # etc.) whose instance ID is set at construction time. The
+            # chunk content_hash check still runs at view-section read so
+            # per-chunk integrity is enforced; only the class-level
+            # re-encode is skipped. The user can still call
+            # ``verify_tokenizer_view(id, tokenizer=…)`` explicitly with
+            # the right instance to re-encode.
+            #
+            # Importantly we NARROW the suppression to the registry-lookup
+            # case only. Catching all KeyError around verify_tokenizer_view
+            # would mask malformed manifests for built-in tokenizers
+            # (missing ``tokenizer_config``, ``test_vector``, etc.) — those
+            # MUST still propagate as integrity failures. (Codex P1 on
+            # PR #13.)
             try:
-                self.verify_tokenizer_view(tid)
+                get_tokenizer_class(tid)
             except KeyError:
-                # Tokenizer id not in the registry — typical for custom
-                # adapters like `tset.hf_tokenizer.HfTokenizer` whose
-                # instance ID is set at construction time. The chunk
-                # content_hash check still runs at view-section read,
-                # so per-chunk integrity is enforced; only the
-                # tokenizer-class re-encode is skipped here. The user
-                # can still call ``verify_tokenizer_view(id, tokenizer=…)``
-                # explicitly with the right instance to re-encode.
                 continue
+            self.verify_tokenizer_view(tid)
 
     def close(self) -> None:
         try:
