@@ -167,6 +167,12 @@ tset verify out.tset
 # Record a GDPR-Art-17 / RTBF deletion in a dataset's exclusion overlay.
 # Updates exclusions.json, dataset_merkle_root, and the audit log atomically.
 tset add-exclusion ./my-dataset.tset 912c26a1...3aece --reason "GDPR-Art-17 request 2026-04-29"
+
+# Run the language-agnostic conformance suite against any shard.
+# Third-party implementations point this at the canonical expected.json
+# sidecars in tests/conformance/fixtures/ to prove they read the format
+# the same way as the reference impl. Exits non-zero on any mismatch.
+tset conformance my-shard.tset expected.json [--json]
 ```
 
 ---

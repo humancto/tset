@@ -336,7 +336,7 @@ fn add_exclusion_rejects_single_shard_file() {
     let out = cli()
         .arg("add-exclusion")
         .arg(&dst)
-        .arg(&"ab".repeat(32))
+        .arg("ab".repeat(32))
         .output()
         .unwrap();
     assert!(!out.status.success());
@@ -360,4 +360,96 @@ fn add_exclusion_rejects_invalid_hex() {
     assert!(!out.status.success());
     let s = String::from_utf8_lossy(&out.stderr);
     assert!(s.contains("not valid hex"));
+}
+
+// ── conformance ─────────────────────────────────────────────────────────
+
+#[test]
+fn conformance_passes_against_committed_fixture() {
+    // Fixture lives at the repo level; tests run from the workspace
+    // root (target/debug/deps), so navigate up.
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("conformance")
+        .join("fixtures");
+    let shard = fixtures.join("fixture-small.tset");
+    let expected = fixtures.join("fixture-small.expected.json");
+    if !shard.exists() {
+        eprintln!("skipping: fixture-small.tset not present");
+        return;
+    }
+    let out = cli()
+        .arg("conformance")
+        .arg(&shard)
+        .arg(&expected)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "conformance failed:\n{:?}\n{}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("14 / 14 passed"));
+}
+
+#[test]
+fn conformance_fails_on_mismatched_fixture() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("conformance")
+        .join("fixtures");
+    let shard = fixtures.join("fixture-empty.tset");
+    let expected = fixtures.join("fixture-small.expected.json");
+    if !shard.exists() || !expected.exists() {
+        eprintln!("skipping: fixtures not present");
+        return;
+    }
+    let out = cli()
+        .arg("conformance")
+        .arg(&shard)
+        .arg(&expected)
+        .output()
+        .unwrap();
+    // Non-zero exit on any mismatch is the contract third-party
+    // implementations rely on to detect drift in CI.
+    assert!(!out.status.success());
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("FAIL"));
+    assert!(s.contains("manifest_hash"));
+}
+
+#[test]
+fn conformance_json_output_is_parseable() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("conformance")
+        .join("fixtures");
+    let shard = fixtures.join("fixture-small.tset");
+    let expected = fixtures.join("fixture-small.expected.json");
+    if !shard.exists() {
+        eprintln!("skipping: fixture-small.tset not present");
+        return;
+    }
+    let out = cli()
+        .arg("conformance")
+        .arg(&shard)
+        .arg(&expected)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("--json output must be valid JSON");
+    assert_eq!(v["passed"], v["total"]);
+    assert_eq!(v["failed"], 0);
+    assert!(v["checks"].as_array().unwrap().len() >= 14);
 }
