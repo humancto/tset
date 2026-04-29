@@ -197,14 +197,18 @@ the `tset_rs` wheel installed.
 | `smt_present_keys` redundant with `document_index` | minor | tolerate or post-process the manifest | v0.4 spec drops it |
 | Hex encoding of every hash in JSON | minor | base64 in v0.4 manifest, binary in sections | v0.4 |
 | Manifest grows unbounded with chunk count | manageable | tune chunk size (default 64 K tokens is fine) | v0.4 binary index |
-| Dataset Merkle root not bound to exclusion overlay | **gap vs. README pitch** | document and use exclusion-overlay file directly | v0.4 spec extends the leaf set |
+| Dataset Merkle root not bound to exclusion overlay | **fixed in overlay v0.3.0** | already addressed; legacy v0.1.0 / v0.2.0 manifests still verify with the original shards-only root | n/a — shipped |
 
-The **only** items I'd call deal-breakers for production today are:
+The **only** remaining production deal-breaker is:
 
 1. **Tweet-sized direct ingest** — solvable by sharding records.
-2. **Exclusion-overlay binding** — the receipts pitch promises this,
-   v0.3.2 doesn't deliver it. Write code as if the dataset root will
-   change post-fix; do not depend on its current behavior.
+
+(Issue #4, the previously-listed exclusion-overlay binding gap, was
+fixed by bumping the dataset overlay version to **0.3.0**, which folds
+the exclusion subtree into the dataset Merkle root via a domain-tagged
+composite. Old datasets keep verifying with their original shards-only
+root because their manifests still claim "0.1.0"/"0.2.0" — see the
+backward-compat tests in ``python/tests/test_dataset.py``.)
 
 Everything else is a size knob, and the knobs are well-understood.
 
