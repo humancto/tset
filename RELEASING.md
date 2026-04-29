@@ -52,15 +52,27 @@ The workspace version + the Python package version must match:
 - `crates/tset-cli/Cargo.toml` → `tset-core = { path = ..., version = "<X>" }`
 - `crates/tset-py/Cargo.toml`  → `tset-core = { path = ..., version = "<X>" }`
 
-`make check-versions` (TODO) or simply:
+Run the pre-flight:
 
 ```bash
-grep -E '^version = "' Cargo.toml python/pyproject.toml \
-    crates/tset-cli/Cargo.toml crates/tset-py/Cargo.toml
+python scripts/check-release-versions.py 0.3.3
 ```
 
-All four must show the same version string. The release workflow
-re-checks this in its `sanity` job and aborts if they disagree.
+Output on a clean tree:
+
+```
+Versions in release-gated files:
+  Cargo.toml [workspace.package]              0.3.3
+  python/pyproject.toml [project]             0.3.3
+  crates/tset-cli/Cargo.toml [tset-core dep]  0.3.3
+  crates/tset-py/Cargo.toml [tset-core dep]   0.3.3
+
+All four files agree: 0.3.3  (matches tag 0.3.3)
+```
+
+The same check runs in `python/tests/test_release_versions.py`, so CI
+catches drift on every PR — not just at tag-push time. The release
+workflow's `sanity` job re-runs it once more before any publish.
 
 ### 3. Update the changelog
 

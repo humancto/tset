@@ -2,6 +2,103 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] — 2026-04-29
+
+First release ready for **crates.io and PyPI**. The format wire layout
+is unchanged from v0.3.1; everything in this version is distribution,
+adoption surface, and one targeted spec fix.
+
+### Distribution (Stage 0)
+
+- `tset-core`, `tset-cli`, `tset-py` published-ready as crates.io
+  packages with full metadata (homepage, docs, keywords, categories,
+  rust-version 1.74). Each crate ships a focused crates.io README
+  with badges and a 30-line quickstart.
+- Python wheel builds via **maturin** in mixed mode: a single
+  `pip install tset` ships both the pure-Python source and the
+  precompiled `tset_rs` Rust extension. abi3-py39 means one wheel
+  covers Python 3.9+.
+- New `.github/workflows/release.yml` triggers on `v*` tags. Six
+  jobs: sanity (cross-checks `Cargo.toml` and `python/pyproject.toml`
+  versions against the tag) → `tset-core` → `tset-cli` + `tset-py`
+  in parallel → cibuildwheel matrix (linux/macos/windows ×
+  x86_64/aarch64/arm64) → sdist → PyPI Trusted Publishing via OIDC.
+- `RELEASING.md` documents the maintainer recipe + recovery from
+  partial releases.
+
+### HuggingFace integration (Stage 1a)
+
+- New `tset.hf` module: `from_tset(path)`, `from_dataset(path)`,
+  `to_tset(hf_ds, path)`. Lazy-imports `datasets` so it adds no
+  load-time cost when the optional dep is absent.
+- `from_tset` supports `with_tokens=True` (per-doc token streams via
+  a lockstep iterator — O(largest doc) memory, not O(corpus)),
+  metadata pass-through with collision-safe `meta_` prefixing,
+  and `streaming=True` for `IterableDataset` output.
+- `to_tset` accepts any iterable of dict records; `metadata_fields="*"`
+  preserves every non-content field.
+- `tset.converters.to_huggingface_dataset` kept as a deprecation shim
+  delegating to `from_tset`.
+
+### Showcase + scaling story
+
+- New `examples/datasets/`: TinyShakespeare end-to-end + Click
+  source code + synthetic-stream generator. 27 tests across
+  `python/tests/showcase/`, all real public corpora.
+- New `examples/datasets/SCALING.md`: per-doc overhead model,
+  measured ratios across 1 / 10 / 100 MB scales (constant 1.57×
+  on web-shaped data), competitive matrix vs JSONL/zstd/Parquet/
+  WebDataset, deal-breaker triage.
+- New `examples/datasets/_lib/profile_size.py` byte-breakdown
+  inspector; reveals that 78% of a v0.3.2-with-sections shard is the
+  JSON manifest (audit_log + smt_present_keys dominate).
+- New `examples/published/` corpus: a 188 KB deterministically-built
+  TinyShakespeare-200 shard hosted on `raw.githubusercontent.com`,
+  with a 30-line `verify.py` that anyone can run to confirm the
+  receipts (inclusion proof, non-inclusion proof, tamper rejection,
+  audit-log chain). Pin tests in `python/tests/test_published_corpus.py`
+  lock every published hash.
+
+### Spec fix (closes #4)
+
+- New dataset overlay version **0.3.0**. The dataset Merkle root now
+  binds the exclusion overlay via a domain-tagged composite:
+  `BLAKE3(0x42 || shards_subroot || exclusions_subroot)`. Adding or
+  revoking an exclusion changes the root, so a reader verifying
+  against a published root detects deletion-overlay mutations.
+- Backward compat: legacy overlay versions `"0.1.0"` (Python writer)
+  and `"0.2.0"` (Rust writer) keep the original shards-only
+  computation, so existing datasets verify with the same root they
+  were originally written with.
+- Cross-impl validation: `parse_doc_hash_hex` rejects malformed hex
+  in shard hashes and exclusion strings. Python `bytes.fromhex` and
+  Rust both error on the same inputs — no silent collapse to empty
+  bytes that could let a tampered overlay produce a valid-looking
+  root.
+- `SPEC.md` §8a documents the overlay versioning + the three Merkle
+  computations.
+
+### Site
+
+- Landing redesign around the "receipts layer" pitch with a Merkle
+  motif. Hero now leads with both `cargo install tset-cli` and
+  `pip install tset`, plus a "Verify a hosted corpus" CTA.
+- New `/showcase/` page with measured numbers from the scale +
+  competitive benchmarks.
+
+### Tests
+
+| Surface | Count |
+|---|---:|
+| Rust unit + integration | 50+ (new `dataset_overlay_validation.rs`) |
+| Python pytest | 145 |
+| Showcase suite | 27 (TinyShakespeare 20 + click 4 + synthetic 3) |
+| HF adapter | 17 |
+| Published-corpus pin | 4 |
+
+`cargo clippy --workspace --all-targets -- -D warnings` and
+`cargo fmt --check` clean across the workspace.
+
 ## [0.3.1] — 2026-04-27
 
 PR 10: Ed25519 audit-log signing.
