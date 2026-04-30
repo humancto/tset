@@ -43,7 +43,7 @@ def _next_snapshot_id() -> str:
 from tset import manifest as M
 from tset.audit_log import AuditLog
 from tset.columns import MetadataColumns
-from tset.constants import HEADER_SIZE, TRUNCATED_HASH_SIZE, VERSION_MAJOR, VERSION_MINOR
+from tset.constants import HEADER_SIZE, TRUNCATED_HASH_SIZE, VERSION_MAJOR
 from tset.document_store import DocumentStoreWriter
 from tset.footer import Footer
 from tset.hashing import hash_bytes, shard_merkle_root
@@ -226,16 +226,18 @@ class Writer:
 
         M.manifest_set_shard_merkle_root(manifest, merkle.hex())
         M.manifest_set_smt_root(manifest, smt_root.hex())
-        M.manifest_set_audit_log(manifest, [e.to_dict() for e in self._audit.entries], self._audit.log_root)
-        M.manifest_set_columns(manifest, self._columns.to_dict())
         M.manifest_set_subsets(manifest, [s.to_dict() for s in self._subsets])
-        manifest["smt_present_keys"] = [k.hex() for k in self._smt.present_keys()]
         manifest["smt_version"] = "v0.1-fixed-256"
 
-        # Opt-in v0.3.2 feature: emit on-disk TSMT/TLOG/TCOL sections
-        # AFTER tokenization views and BEFORE the manifest. v0.4 readers
-        # will prefer these; v0.1–v0.3 readers ignore unknown manifest
-        # keys + skip unknown body bytes via section length headers.
+        # v0.4 wire format: when binary sections are emitted we DROP the
+        # inline JSON forms of audit_log / metadata_columns / smt_present_keys
+        # — the on-disk sections (TSMT / TLOG / TCOL) become the sole
+        # source of truth. v0.3 writers (no sections) keep the inline
+        # forms and stay on version_minor=3 for backward compat.
+        #
+        # Pre-fix v0.3.2 behaviour wrote BOTH (sections AND inline),
+        # which made files ~50% larger when sections were enabled. See
+        # CHANGELOG [0.4.0] and Issue #5 for the storage measurements.
         if self._emit_binary_sections:
             from tset import sections as _sec
 
@@ -270,13 +272,37 @@ class Writer:
                 "size": len(tcol_bytes),
             }
 
+            # Strip the inline-form keys that empty_manifest() seeds by
+            # default — v0.4 carries this data only in the binary sections.
+            for k in ("audit_log", "metadata_columns"):
+                manifest.pop(k, None)
+            effective_version_minor = 4
+            manifest["version"] = f"{VERSION_MAJOR}.{effective_version_minor}.0"
+        else:
+            # Legacy v0.3 path: inline forms only, no on-disk sections.
+            M.manifest_set_audit_log(
+                manifest,
+                [e.to_dict() for e in self._audit.entries],
+                self._audit.log_root,
+            )
+            M.manifest_set_columns(manifest, self._columns.to_dict())
+            manifest["smt_present_keys"] = [
+                k.hex() for k in self._smt.present_keys()
+            ]
+            effective_version_minor = 3
+            # The manifest's `"version"` JSON field MUST mirror the
+            # on-disk header's version_minor. empty_manifest() seeds
+            # it from the in-Python VERSION_MINOR constant (now 4),
+            # which would mislabel a v0.3 shard.
+            manifest["version"] = f"{VERSION_MAJOR}.{effective_version_minor}.0"
+
         manifest_bytes = M.encode_manifest(manifest)
         manifest_hash = hash_bytes(manifest_bytes)
         manifest_offset = HEADER_SIZE + len(body)
 
         header = Header(
             version_major=VERSION_MAJOR,
-            version_minor=VERSION_MINOR,
+            version_minor=effective_version_minor,
             flags=0,
             manifest_offset=manifest_offset,
             manifest_size=len(manifest_bytes),

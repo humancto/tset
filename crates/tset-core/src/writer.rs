@@ -337,28 +337,22 @@ impl Writer {
 
         manifest.insert("shard_merkle_root".into(), json!(hex::encode(merkle)));
         manifest.insert("smt_root".into(), json!(hex::encode(smt_root)));
-        manifest.insert("audit_log".into(), audit.to_json());
-        manifest.insert("metadata_columns".into(), columns.to_json());
         manifest.insert(
             "subsets".into(),
             Value::Array(subsets.iter().map(Subset::to_json).collect()),
         );
-        manifest.insert(
-            "smt_present_keys".into(),
-            json!(smt
-                .present_keys()
-                .iter()
-                .map(hex::encode)
-                .collect::<Vec<_>>()),
-        );
         manifest.insert("smt_version".into(), json!("v0.1-fixed-256"));
 
-        // Emit on-disk binary sections (opt-in). They sit AFTER all
-        // tokenization views and BEFORE the manifest. Manifest gets
-        // pointer fields so v0.4+ readers can locate them in O(1).
-        // Existing v0.1–v0.3 readers ignore the unknown manifest keys
-        // and the unknown body sections (skippable via
-        // payload_size header on each section).
+        // v0.4 wire format: when binary sections are emitted we DROP
+        // the inline JSON forms of audit_log / metadata_columns /
+        // smt_present_keys and bump version_minor to 4. The on-disk
+        // sections (TSMT / TLOG / TCOL) become the sole source of
+        // truth. v0.3 writers (no sections) keep the inline forms
+        // and stay on version_minor=3 for backward compat.
+        //
+        // Pre-fix v0.3.2 wrote BOTH (sections AND inline), inflating
+        // shards by ~50% when sections were enabled. See CHANGELOG
+        // [0.4.0] and Issue #5 for measurements.
         if emit_binary_sections {
             use crate::sections::{encode_tcol_section, encode_tlog_section, encode_tsmt_section};
 
@@ -414,7 +408,30 @@ impl Writer {
                     "size": tcol_bytes.len() as u64,
                 }),
             );
+        } else {
+            // Legacy v0.3 path: inline forms only, no on-disk sections.
+            manifest.insert("audit_log".into(), audit.to_json());
+            manifest.insert("metadata_columns".into(), columns.to_json());
+            manifest.insert(
+                "smt_present_keys".into(),
+                json!(smt
+                    .present_keys()
+                    .iter()
+                    .map(hex::encode)
+                    .collect::<Vec<_>>()),
+            );
         }
+
+        let effective_version_minor = if emit_binary_sections { 4 } else { 3 };
+        // Keep the manifest's "version" string in sync with the header
+        // minor we're about to write — empty_manifest() seeded it from
+        // the compile-time VERSION_MINOR constant (now 4), which would
+        // mislabel a legacy v0.3 shard as 0.4.0 in tooling that reads
+        // the manifest field for reporting.
+        manifest.insert(
+            "version".into(),
+            json!(format!("{VERSION_MAJOR}.{effective_version_minor}.0")),
+        );
 
         let manifest_value = Value::Object(manifest);
         let manifest_bytes = canonical_json(&manifest_value).into_bytes();
@@ -424,7 +441,7 @@ impl Writer {
 
         let header = Header {
             version_major: VERSION_MAJOR,
-            version_minor: VERSION_MINOR,
+            version_minor: effective_version_minor,
             flags: 0,
             manifest_offset,
             manifest_size,

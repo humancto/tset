@@ -265,7 +265,7 @@ def main() -> int:
         ("Parquet (zstd)",                 "parquet",                   "columnar"),
         ("TSET · 1 view",                  "tset_minimal_1view",        "no binary sections"),
         ("TSET · 2 views, no sections",    "tset_2views_no_sections",   "lean prod config"),
-        ("TSET · 2 views + sections",      "tset_2views_with_sections", "v0.3.2 sections enabled"),
+        ("TSET · 2 views + sections",      "tset_2views_with_sections", "v0.4 sections-only (no inline duplication)"),
     ]:
         r = rows[key]
         if r.get("skipped"):

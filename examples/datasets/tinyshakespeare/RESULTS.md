@@ -26,7 +26,7 @@ percent; sizes are deterministic.
 | Parquet (zstd) | 536 KB | 0.34× | columnar |
 | TSET · 1 view | 6.2 MB | 4.05× | ByteLevelTokenizer only, no sections |
 | TSET · 2 views, no sections | 7.5 MB | 4.91× | lean prod config (what `convert.py` writes) |
-| TSET · 2 views + sections | 10.6 MB | 6.92× | v0.3.2 sections enabled — **bloat from inline duplication, see SCALING.md** |
+| TSET · 2 views + sections | 7.3 MB | 4.74× | v0.4 sections-only (Issue #5 fix; was 10.6 MB / 6.92× under v0.3.2 transitional inline-duplication) |
 
 > TSET is **larger** than text-only formats because it embeds pre-computed
 > tokenizations and Merkle structures in the same file. The fair

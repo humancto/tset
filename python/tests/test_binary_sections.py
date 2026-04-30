@@ -79,8 +79,54 @@ def test_python_writer_default_does_not_emit_binary_sections(tmp_path):
     assert "metadata_columns_section" not in r.manifest
 
 
-def test_in_manifest_and_on_disk_smt_agree(tmp_path):
-    p = str(tmp_path / "smt.tset")
+def test_v04_writer_drops_inline_forms_when_sections_enabled(tmp_path):
+    """v0.4 contract: when sections are emitted the inline JSON forms
+    of audit_log / smt_present_keys / metadata_columns MUST be absent.
+
+    Pre-v0.4 (the v0.3.2 transitional state) wrote both — sections AND
+    inline — which inflated shards by ~50%. Issue #5 resolved this by
+    making sections the sole source of truth in v0.4.
+    """
+    p = str(tmp_path / "v04.tset")
+    with Writer(p) as w:
+        w.enable_binary_sections()
+        w.add_document(b"alpha", metadata={"lang": "en"})
+        w.add_document(b"beta")
+        w.add_tokenizer_view(ByteLevelTokenizer())
+
+    r = Reader(p)
+    # Header announces v0.4
+    assert r.header.version_minor == 4
+    # Sections present
+    for key in ("smt_section", "audit_log_section", "metadata_columns_section"):
+        assert key in r.manifest, f"missing {key}"
+    # Inline forms absent — this is the storage-saving contract
+    assert "smt_present_keys" not in r.manifest
+    assert "audit_log" not in r.manifest
+    assert "metadata_columns" not in r.manifest
+
+
+def test_v04_reader_loads_audit_log_from_tlog_section(tmp_path):
+    """The reader's ``audit_log()`` accessor must return entries from
+    TLOG even though no inline form exists in the manifest."""
+    p = str(tmp_path / "v04log.tset")
+    with Writer(p) as w:
+        w.enable_binary_sections()
+        w.add_document(b"alpha")
+        w.add_document(b"beta")
+        w.add_tokenizer_view(ByteLevelTokenizer())
+
+    r = Reader(p)
+    log = r.audit_log()
+    assert log.entries, "v0.4 reader returned empty audit log; TLOG decode broken"
+    types = {e.event_type for e in log.entries}
+    assert "ingestion" in types
+    # And the chained-hash + signature contract still verifies
+    assert log.verify()
+
+
+def test_v04_reader_loads_smt_from_tsmt_section(tmp_path):
+    p = str(tmp_path / "v04smt.tset")
     with Writer(p) as w:
         w.enable_binary_sections()
         w.add_document(b"alpha")
@@ -89,32 +135,18 @@ def test_in_manifest_and_on_disk_smt_agree(tmp_path):
         w.add_tokenizer_view(ByteLevelTokenizer())
 
     r = Reader(p)
-    section = decode_tsmt_section(_read_section_from_shard(p, "smt_section"))
-    assert section["smt_root"] == bytes.fromhex(r.manifest["smt_root"])
-    on_disk_keys = sorted(section["present_keys"])
-    in_manifest_keys = sorted(
-        bytes.fromhex(k) for k in r.manifest["smt_present_keys"]
+    smt = r.smt()
+    assert len(smt.present_keys()) == 3, (
+        "v0.4 reader didn't reconstruct SMT from TSMT section"
     )
-    assert on_disk_keys == in_manifest_keys
+    # Inclusion + non-inclusion proofs still verify against smt_root
+    h, _ = next(iter(r.documents()))
+    assert r.prove_inclusion(h).verify(r.smt_root())
+    assert r.prove_non_inclusion(b"\xab" * 32).verify(r.smt_root())
 
 
-def test_in_manifest_and_on_disk_audit_log_agree(tmp_path):
-    p = str(tmp_path / "audit.tset")
-    with Writer(p) as w:
-        w.enable_binary_sections()
-        w.add_document(b"alpha")
-        w.add_tokenizer_view(ByteLevelTokenizer())
-
-    r = Reader(p)
-    section = decode_tlog_section(_read_section_from_shard(p, "audit_log_section"))
-    assert section["audit_json"] == r.manifest["audit_log"]
-    log_root_hex = r.manifest["audit_log"]["log_root"]
-    expected_log_root = bytes.fromhex(log_root_hex) if log_root_hex else b"\x00" * 32
-    assert section["log_root"] == expected_log_root
-
-
-def test_in_manifest_and_on_disk_columns_agree(tmp_path):
-    p = str(tmp_path / "col.tset")
+def test_v04_reader_loads_metadata_columns_from_tcol_section(tmp_path):
+    p = str(tmp_path / "v04col.tset")
     with Writer(p) as w:
         w.enable_binary_sections()
         w.add_document(b"alpha", metadata={"lang": "en", "score": 0.9})
@@ -122,9 +154,9 @@ def test_in_manifest_and_on_disk_columns_agree(tmp_path):
         w.add_tokenizer_view(ByteLevelTokenizer())
 
     r = Reader(p)
-    section = decode_tcol_section(_read_section_from_shard(p, "metadata_columns_section"))
-    assert section["columns_json"] == r.manifest["metadata_columns"]
-    assert section["row_count"] == r.manifest["metadata_columns"]["row_count"]
+    cols = r.metadata_columns()
+    assert sorted(cols.names()) == ["lang", "score"]
+    assert sorted(cols.column("lang")) == ["en", "fr"]
 
 
 def test_v032_conformance_fixture_decodes_cleanly():
@@ -185,3 +217,77 @@ def test_existing_v03_fixture_still_lacks_sections():
     assert "smt_section" not in r.manifest
     # And it still decodes without error
     assert r.tokenizer_ids() == ["byte-level-v1", "whitespace-hashed-v1"]
+
+
+def test_v04_reader_rejects_missing_section_pointers(tmp_path):
+    """Codex P2 on PR #15: v0.4 makes sections the source of truth, so
+    a manifest claiming version 0.4 but lacking section pointers is
+    malformed — not an empty state. Without this check, the reader
+    silently treated missing TLOG / TCOL as "empty log" / "no metadata
+    columns" and ``_verify_invariants`` would skip audit-log integrity
+    validation entirely. We surgically remove a section pointer from a
+    valid v0.4 shard, recompute the manifest hash, and assert the
+    reader rejects it.
+    """
+    import json
+
+    from tset.constants import HEADER_SIZE
+    from tset.hashing import hash_bytes
+    from tset.header import Header
+
+    p = str(tmp_path / "v04-malformed.tset")
+    with Writer(p) as w:
+        w.enable_binary_sections()
+        w.add_document(b"alpha")
+        w.add_tokenizer_view(ByteLevelTokenizer())
+
+    raw = open(p, "rb").read()
+    header = Header.decode(raw[:HEADER_SIZE])
+    assert header.version_minor == 4
+    manifest_bytes = raw[
+        header.manifest_offset : header.manifest_offset + header.manifest_size
+    ]
+    manifest = json.loads(manifest_bytes)
+    # Drop the audit_log_section pointer — every v0.4 shard MUST have it.
+    del manifest["audit_log_section"]
+    new_bytes = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    new_bytes = new_bytes + b" " * (header.manifest_size - len(new_bytes))
+    assert len(new_bytes) == header.manifest_size
+
+    patched = bytearray(raw)
+    patched[
+        header.manifest_offset : header.manifest_offset + header.manifest_size
+    ] = new_bytes
+    new_hash = hash_bytes(bytes(new_bytes))
+    patched[64:96] = new_hash
+    patched[-40 + 8 : -40 + 36] = new_hash[:28]
+    open(p, "wb").write(bytes(patched))
+
+    with pytest.raises(ValueError, match="audit_log_section"):
+        Reader(p)
+
+
+def test_v03_writer_keeps_manifest_version_field_in_sync_with_header():
+    """Codex P1 on PR #15: when writing legacy v0.3 (no sections), the
+    manifest's ``version`` JSON field MUST report ``0.3.0`` even though
+    the in-Python VERSION_MINOR constant is now 4. Without the explicit
+    overwrite, tooling that reads the manifest's version field for
+    compatibility / reporting would see ``0.4.0`` on a v0.3 shard.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "v03.tset")
+        with Writer(p) as w:
+            # No enable_binary_sections() — legacy v0.3 path
+            w.add_document(b"alpha")
+            w.add_tokenizer_view(ByteLevelTokenizer())
+
+        r = Reader(p)
+        assert r.header.version_minor == 3
+        assert r.manifest["version"] == "0.3.0", (
+            f"v0.3 shard manifest version should be '0.3.0'; "
+            f"got {r.manifest['version']!r}"
+        )

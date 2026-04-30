@@ -8,8 +8,8 @@ pub const MAGIC_AUDIT_LOG: &[u8; 4] = b"TLOG";
 pub const MAGIC_COLUMNS: &[u8; 4] = b"TCOL";
 
 pub const VERSION_MAJOR: u8 = 0;
-pub const VERSION_MINOR: u8 = 3;
-pub const SUPPORTED_MINOR_VERSIONS: &[u8] = &[1, 2, 3];
+pub const VERSION_MINOR: u8 = 4;
+pub const SUPPORTED_MINOR_VERSIONS: &[u8] = &[1, 2, 3, 4];
 
 pub const HEADER_SIZE: usize = 4096;
 pub const FOOTER_SIZE: usize = 40;

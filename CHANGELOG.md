@@ -2,6 +2,80 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] — 2026-04-29
+
+**Wire-format minor bump.** Closes Issue #5: binary sections become the
+sole source of truth when enabled, and the inline JSON duplicates are
+dropped. Net result: `enable_binary_sections()` shrinks files instead
+of growing them.
+
+### Headline numbers (TinyShakespeare, 2 tokenizer views)
+
+| Config | v0.3.2 (transitional) | v0.4 | Change |
+|---|---:|---:|---:|
+| 2 views, no sections | 7.5 MB (4.91× JSONL) | 7.5 MB | unchanged |
+| 2 views + sections | 10.6 MB (6.92× JSONL) | **7.3 MB (4.74× JSONL)** | **−31%** |
+
+Sections-enabled is now smaller than no-sections — exactly inverting
+the v0.3.2 surprise.
+
+### Wire format
+
+- `version_minor` bumps from `3` to `4`. Writers without
+  `enable_binary_sections()` keep emitting `version_minor=3` (legacy
+  compat). Writers with sections enabled emit `version_minor=4`.
+- v0.4 manifests **omit** these inline keys (the corresponding binary
+  section is now the sole source):
+  - `audit_log` → carried by `audit_log_section` (TLOG)
+  - `metadata_columns` → carried by `metadata_columns_section` (TCOL)
+  - `smt_present_keys` → carried by `smt_section` (TSMT)
+- The `"version"` JSON field in the manifest now mirrors the on-disk
+  `version_minor` (was previously always the writer's compile-time
+  constant, which could mislabel a v0.3 shard after a writer rebuild).
+
+### Backward compatibility
+
+- v0.4 readers (`tset 0.4+`) read both v0.3 and v0.4 shards. For v0.4
+  they parse sections; for v0.3 they parse inline JSON exactly as before.
+- v0.3 readers (`tset 0.3.x`) **reject** v0.4 shards via the
+  `SUPPORTED_MINOR_VERSIONS` check in `Header::decode` — clean failure,
+  not silent corruption.
+- Existing v0.3 fixtures (`fixture-small`, `fixture-big`,
+  `fixture-empty`, `fixture-v01-small`) still open and verify under the
+  legacy path. The `fixture-sections` conformance fixture has been
+  regenerated as v0.4.
+
+### Implementation
+
+- `python/tset/constants.py`, `crates/tset-core/src/constants.rs`:
+  `VERSION_MINOR=4`, `SUPPORTED_MINOR_VERSIONS=[1,2,3,4]`.
+- `python/tset/writer.py`, `crates/tset-core/src/writer.rs`: when
+  sections enabled, drop inline forms; emit `version_minor=4`. The
+  legacy v0.3 path (no sections) is unchanged: inline forms only,
+  `version_minor=3`.
+- `python/tset/reader.py`, `crates/tset-core/src/reader.rs`: when
+  `version_minor >= 4`, `audit_log()` / `metadata_columns()` / `smt()`
+  pull from the on-disk TLOG / TCOL / TSMT sections. The chained-hash
+  + Ed25519 signature contract on the audit log is unchanged; only
+  the storage location moves.
+
+### Tests
+
+- `python/tests/test_binary_sections.py`: rewrote the v0.3.2 inline
+  + section "agree" tests as v0.4 contract tests:
+  `test_v04_writer_drops_inline_forms_when_sections_enabled`,
+  `test_v04_reader_loads_audit_log_from_tlog_section`,
+  `test_v04_reader_loads_smt_from_tsmt_section`,
+  `test_v04_reader_loads_metadata_columns_from_tcol_section`.
+- All 39 Rust integration tests + 181 Python tests still pass.
+
+### Released artefacts
+
+- `tset-core 0.4.0`, `tset-cli 0.4.0`, `tset-py 0.4.0` on crates.io
+  (next release tag).
+- `tset 0.4.0` on PyPI.
+
+
 ## [0.3.2] — 2026-04-29
 
 First release ready for **crates.io and PyPI**. The format wire layout

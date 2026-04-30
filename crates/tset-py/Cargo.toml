@@ -18,7 +18,7 @@ name = "tset_rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-tset-core = { path = "../tset-core", version = "0.3.2" }
+tset-core = { path = "../tset-core", version = "0.4.0" }
 pyo3 = { workspace = true }
 hex = { workspace = true }
 serde_json = { workspace = true }
