@@ -1,0 +1,57 @@
+name: Conformance
+
+# Runs the language-agnostic conformance suite (`tset conformance`)
+# against every committed fixture. Any drift between an implementation
+# and the canonical fixture is a hard failure.
+#
+# Third-party implementations can plug in here by adding their own
+# step that builds their shard from the same input + runs
+# `tset conformance` against the canonical expected.json. The
+# conformance binary is the contract.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build tset CLI
+        run: cargo build --release -p tset-cli
+      - name: run conformance against every fixture
+        run: |
+          set -e
+          for shard in tests/conformance/fixtures/*.tset; do
+            base=$(basename "$shard" .tset)
+            expected="tests/conformance/fixtures/${base}.expected.json"
+            if [ -f "$expected" ]; then
+              echo "::group::$base"
+              ./target/release/tset conformance "$shard" "$expected"
+              echo "::endgroup::"
+            fi
+          done
+      - name: emit JSON results as artefact
+        run: |
+          mkdir -p conformance-results
+          for shard in tests/conformance/fixtures/*.tset; do
+            base=$(basename "$shard" .tset)
+            expected="tests/conformance/fixtures/${base}.expected.json"
+            if [ -f "$expected" ]; then
+              ./target/release/tset conformance "$shard" "$expected" --json \
+                > "conformance-results/${base}.json"
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-results-${{ github.sha }}
+          path: conformance-results/
+          retention-days: 30

@@ -1,11 +1,13 @@
 //! `tset` — command-line tool for TSET shards.
 //!
 //! Subcommands:
-//!   tset inspect <path>             summarize header, manifest, views
-//!   tset verify  <path>             full open + integrity check; exit 0 on pass
-//!   tset stats   <path>             size breakdown + per-doc/per-view distributions
-//!   tset diff    <a> <b>            compare two shards: roots, docs, views, sections
-//!   tset convert jsonl <src> <dst>  build a TSET shard from a JSONL corpus
+//!   tset inspect <path>                       summarize header, manifest, views
+//!   tset verify  <path>                       full open + integrity check; exit 0 on pass
+//!   tset stats   <path>                       size breakdown + per-doc/per-view distributions
+//!   tset diff    <a> <b>                      compare two shards: roots, docs, views, sections
+//!   tset convert jsonl <src> <dst>            build a TSET shard from a JSONL corpus
+//!   tset add-exclusion <dataset> <hex_hash>   record a GDPR-Art-17 exclusion in a dataset overlay
+//!   tset conformance <shard> <expected>       run the language-agnostic conformance suite
 //!
 //! Intentionally argparse-free (no clap) so the CLI has the same minimal
 //! footprint as `tset-core`. Add clap when option surface grows.
@@ -13,9 +15,10 @@
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use tset_core::dataset::DatasetWriter;
 use tset_core::tokenizers::{ByteLevelTokenizer, Tokenizer, WhitespaceTokenizer};
 use tset_core::{Reader, Writer};
 
@@ -33,6 +36,8 @@ fn main() -> ExitCode {
         "stats" => cmd_stats(&rest),
         "diff" => cmd_diff(&rest),
         "convert" => cmd_convert(&rest),
+        "add-exclusion" => cmd_add_exclusion(&rest),
+        "conformance" => cmd_conformance(&rest),
         "version" | "--version" | "-V" => {
             println!("tset {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -64,6 +69,8 @@ fn print_usage() {
     println!("    tset stats   <path>");
     println!("    tset diff    <a.tset> <b.tset>");
     println!("    tset convert jsonl <src.jsonl> <dst.tset> [--text-field FIELD] [--tokenizer ID] [--vocab N] [--binary-sections]");
+    println!("    tset add-exclusion <dataset-dir> <hex-doc-hash> [--reason \"...\"]");
+    println!("    tset conformance <shard.tset> <expected.json> [--json]");
     println!("    tset version");
 }
 
@@ -508,4 +515,334 @@ fn cmd_diff(args: &[&str]) -> Result<(), String> {
             differences
         ))
     }
+}
+
+// ── add-exclusion ───────────────────────────────────────────────────────
+//
+// Records a GDPR-Article-17-style exclusion in a dataset's overlay.
+// Operates on a dataset directory (containing manifest.tset.json +
+// shards/ + optionally exclusions.json) — single-shard files have an
+// immutable SMT and cannot be retroactively excluded.
+//
+// The new exclusion is appended to the audit log as a signed
+// `exclusion` event (or unsigned, if the original log was unsigned),
+// the dataset_merkle_root is recomputed under overlay version 0.3.0
+// (which binds the exclusion overlay into the root — issue #4), and
+// both manifest.tset.json and exclusions.json are rewritten.
+
+fn cmd_add_exclusion(args: &[&str]) -> Result<(), String> {
+    let dataset = args.first().ok_or("add-exclusion: missing <dataset-dir>")?;
+    let hex_hash = args.get(1).ok_or("add-exclusion: missing <hex-doc-hash>")?;
+
+    // Optional --reason "..." flag.
+    let mut reason = String::new();
+    let mut i = 2;
+    while i < args.len() {
+        let raw = args[i];
+        let (flag, inline_value): (&str, Option<&str>) = match raw.find('=') {
+            Some(eq) => (&raw[..eq], Some(&raw[eq + 1..])),
+            None => (raw, None),
+        };
+        match flag {
+            "--reason" => {
+                let value = if let Some(v) = inline_value {
+                    v.to_string()
+                } else {
+                    let v = args.get(i + 1).ok_or("--reason needs a value")?.to_string();
+                    i += 1;
+                    v
+                };
+                reason = value;
+            }
+            other => return Err(format!("unknown flag: {other}")),
+        }
+        i += 1;
+    }
+
+    let path = PathBuf::from(dataset);
+    if path.is_file() {
+        return Err(
+            "add-exclusion: target is a single .tset file; exclusions only apply \
+             to dataset directories. Wrap the shard in a dataset directory first."
+                .into(),
+        );
+    }
+    if !path.is_dir() {
+        return Err(format!("add-exclusion: {dataset} is not a directory"));
+    }
+
+    // Decode + validate the hash early so we don't half-write state on a typo.
+    let hash_bytes = hex::decode(hex_hash)
+        .map_err(|e| format!("add-exclusion: <hex-doc-hash> is not valid hex: {e}"))?;
+    if hash_bytes.len() != 32 {
+        return Err(format!(
+            "add-exclusion: <hex-doc-hash> must decode to 32 bytes, got {}",
+            hash_bytes.len()
+        ));
+    }
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(&hash_bytes);
+
+    let mut writer = DatasetWriter::open_existing(&path)
+        .map_err(|e| format!("add-exclusion: open dataset: {e}"))?;
+    let added = writer.add_exclusion(&hash, &reason);
+    writer
+        .close()
+        .map_err(|e| format!("add-exclusion: close: {e}"))?;
+
+    if added {
+        println!("recorded exclusion of {hex_hash}");
+        if !reason.is_empty() {
+            println!("  reason: {reason}");
+        }
+    } else {
+        println!("no-op: {hex_hash} was already excluded — manifest snapshot regenerated");
+    }
+    println!("  dataset_merkle_root + exclusions.json + audit log refreshed");
+    Ok(())
+}
+
+// ── conformance ─────────────────────────────────────────────────────────
+//
+// Language-agnostic conformance harness. Given a shard + an
+// `expected.json` sidecar (the format produced by
+// `tests/conformance/build_corpus.py`), opens the shard with the Rust
+// reader and asserts every invariant in the sidecar matches.
+//
+// Use case: third-party TSET implementations (Go, JVM, Swift, …) ship
+// their conformance results by pointing this binary at the shards
+// they produced + the canonical sidecars. Any drift between
+// implementations shows up as a structured diff.
+//
+// Sidecar shape (subset; see fixture-small.expected.json for full):
+//   {
+//     "version_minor": 3,
+//     "manifest_hash": "<hex>",
+//     "manifest_size": <bytes>,
+//     "shard_merkle_root": "<hex>",
+//     "document_count": <int>,
+//     "tokenization_views": {
+//       "<id>": {
+//         "config_hash": "<hex>",
+//         "num_chunks": <int>,
+//         "total_tokens": <int>,
+//         "vocab_size": <int>,
+//       }
+//     }
+//   }
+
+fn cmd_conformance(args: &[&str]) -> Result<(), String> {
+    let shard = args.first().ok_or("conformance: missing <shard.tset>")?;
+    let expected_path = args.get(1).ok_or("conformance: missing <expected.json>")?;
+    let json_output = args.contains(&"--json");
+
+    let raw =
+        std::fs::read(expected_path).map_err(|e| format!("conformance: read expected: {e}"))?;
+    let expected: serde_json::Value =
+        serde_json::from_slice(&raw).map_err(|e| format!("conformance: parse expected: {e}"))?;
+
+    let r = Reader::open(Path::new(shard)).map_err(|e| e.to_string())?;
+
+    let mut checks: Vec<(String, bool, String, String)> = Vec::new();
+    let mut record = |name: &str, ok: bool, got: String, want: String| {
+        checks.push((name.to_string(), ok, got, want));
+    };
+
+    // version_minor
+    if let Some(want) = expected.get("version_minor").and_then(|v| v.as_u64()) {
+        let got = r.header.version_minor as u64;
+        record(
+            "version_minor",
+            got == want,
+            got.to_string(),
+            want.to_string(),
+        );
+    }
+    // manifest_hash
+    if let Some(want) = expected.get("manifest_hash").and_then(|v| v.as_str()) {
+        let got = hex::encode(r.header.manifest_hash);
+        record("manifest_hash", got == want, got, want.to_string());
+    }
+    // manifest_size
+    if let Some(want) = expected.get("manifest_size").and_then(|v| v.as_u64()) {
+        let got = r.header.manifest_size;
+        record(
+            "manifest_size",
+            got == want,
+            got.to_string(),
+            want.to_string(),
+        );
+    }
+    // shard_merkle_root
+    if let Some(want) = expected.get("shard_merkle_root").and_then(|v| v.as_str()) {
+        let got = hex::encode(r.header.shard_merkle_root);
+        record("shard_merkle_root", got == want, got, want.to_string());
+    }
+    // document_count
+    if let Some(want) = expected.get("document_count").and_then(|v| v.as_u64()) {
+        let got = r.doc_hashes().count() as u64;
+        record(
+            "document_count",
+            got == want,
+            got.to_string(),
+            want.to_string(),
+        );
+    }
+    // tokenization_views (per-id)
+    if let Some(want_views) = expected
+        .get("tokenization_views")
+        .and_then(|v| v.as_object())
+    {
+        let got_ids: std::collections::HashSet<String> = r
+            .tokenizer_ids()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .collect();
+        let want_ids: std::collections::HashSet<String> = want_views.keys().cloned().collect();
+        record(
+            "tokenization_views.set",
+            got_ids == want_ids,
+            format!("{:?}", sorted(&got_ids)),
+            format!("{:?}", sorted(&want_ids)),
+        );
+        for (id, want_view) in want_views {
+            // total_tokens
+            if let Some(want) = want_view.get("total_tokens").and_then(|v| v.as_u64()) {
+                match r.view_total_tokens(id) {
+                    Ok(got) => record(
+                        &format!("views.{id}.total_tokens"),
+                        got == want,
+                        got.to_string(),
+                        want.to_string(),
+                    ),
+                    Err(e) => record(
+                        &format!("views.{id}.total_tokens"),
+                        false,
+                        format!("error: {e}"),
+                        want.to_string(),
+                    ),
+                }
+            }
+            // num_chunks + vocab_size + config_hash from manifest JSON
+            let view_obj = r
+                .manifest()
+                .raw()
+                .get("tokenization_views")
+                .and_then(|v| v.get(id))
+                .and_then(|v| v.as_object());
+            if let Some(view_obj) = view_obj {
+                if let Some(want) = want_view.get("num_chunks").and_then(|v| v.as_u64()) {
+                    let got = view_obj
+                        .get("chunks")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.len() as u64)
+                        .unwrap_or(0);
+                    record(
+                        &format!("views.{id}.num_chunks"),
+                        got == want,
+                        got.to_string(),
+                        want.to_string(),
+                    );
+                }
+                if let Some(want) = want_view.get("vocab_size").and_then(|v| v.as_u64()) {
+                    let got = view_obj
+                        .get("vocab_size")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    record(
+                        &format!("views.{id}.vocab_size"),
+                        got == want,
+                        got.to_string(),
+                        want.to_string(),
+                    );
+                }
+                if let Some(want) = want_view.get("config_hash").and_then(|v| v.as_str()) {
+                    let got = view_obj
+                        .get("config_hash")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    record(
+                        &format!("views.{id}.config_hash"),
+                        got == want,
+                        got,
+                        want.to_string(),
+                    );
+                }
+            }
+        }
+    }
+
+    let total = checks.len();
+    let failed: Vec<&(String, bool, String, String)> = checks.iter().filter(|c| !c.1).collect();
+
+    if json_output {
+        let out = serde_json::json!({
+            "shard": shard,
+            "expected": expected_path,
+            "total": total,
+            "passed": total - failed.len(),
+            "failed": failed.len(),
+            "checks": checks
+                .iter()
+                .map(|(name, ok, got, want)| serde_json::json!({
+                    "name": name, "ok": ok, "got": got, "want": want,
+                }))
+                .collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!(
+            "conformance: {} checks against {}",
+            total,
+            std::path::Path::new(expected_path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("(?)")
+        );
+        for (name, ok, got, want) in &checks {
+            let mark = if *ok { "PASS" } else { "FAIL" };
+            if *ok {
+                println!("  [{mark}] {name}");
+            } else {
+                println!("  [{mark}] {name}: got={got}  want={want}");
+            }
+        }
+        println!();
+        println!(
+            "{} / {} passed{}",
+            total - failed.len(),
+            total,
+            if failed.is_empty() {
+                ""
+            } else {
+                "  *** FAILED ***"
+            }
+        );
+    }
+
+    if total == 0 {
+        // An empty `expected.json` (or one whose only fields are
+        // unknown to us) would otherwise pass with "0 / 0 passed".
+        // That's a false positive — a third-party impl could ship a
+        // blank sidecar and claim conformance. Treat zero checks as
+        // a configuration error.
+        return Err("expected.json had no recognised fields — \
+             nothing was actually checked. Required fields: \
+             version_minor, manifest_hash, manifest_size, \
+             shard_merkle_root, document_count, tokenization_views"
+            .into());
+    }
+
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} conformance check(s) failed", failed.len()))
+    }
+}
+
+fn sorted(set: &std::collections::HashSet<String>) -> Vec<&String> {
+    let mut v: Vec<&String> = set.iter().collect();
+    v.sort();
+    v
 }

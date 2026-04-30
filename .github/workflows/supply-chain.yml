@@ -1,0 +1,105 @@
+name: Supply chain
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily at 03:17 UTC — picks up RustSec / PyPA advisories
+    # without holding up PR feedback.
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-audit:
+    name: cargo audit (RustSec advisory DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: audit workspace
+        run: cargo audit --deny warnings
+
+  pip-audit:
+    name: pip-audit (PyPA advisory DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+      - name: audit declared runtime deps
+        # We pass the requirements explicitly so pip-audit doesn't have
+        # to install our wheel (which needs Rust + maturin to build).
+        # Keep this in sync with python/pyproject.toml [project] deps.
+        run: |
+          cat > /tmp/runtime-deps.txt <<EOF
+          zstandard
+          numpy
+          blake3
+          EOF
+          pip-audit -r /tmp/runtime-deps.txt --strict
+      - name: audit dev / test deps
+        run: |
+          cat > /tmp/dev-deps.txt <<EOF
+          pytest
+          maturin
+          pip-audit
+          EOF
+          pip-audit -r /tmp/dev-deps.txt --strict
+
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+      - name: generate Rust SBOM
+        # cargo-cyclonedx 0.5.x uses --override-filename, not the
+        # older --output-pattern flag. Pin format=json so the artefact
+        # is greppable.
+        run: cargo cyclonedx --format json --override-filename bom
+      - name: install cyclonedx-py
+        run: |
+          python -m pip install --upgrade pip
+          pip install cyclonedx-bom
+      - name: generate Python SBOM
+        # `cyclonedx-py requirements` reads a pip requirements file.
+        # Mirror the same dep list pip-audit uses.
+        run: |
+          cat > /tmp/runtime-deps.txt <<EOF
+          zstandard
+          numpy
+          blake3
+          EOF
+          cyclonedx-py requirements /tmp/runtime-deps.txt -o python-sbom.json
+      - name: collect SBOMs
+        run: |
+          mkdir -p sbom-out
+          find . -name "bom.json" -exec cp --parents {} sbom-out/ \;
+          cp python-sbom.json sbom-out/ || true
+          ls -la sbom-out/
+      - name: upload SBOM artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tset-sbom-${{ github.sha }}
+          path: sbom-out/
+          retention-days: 90

@@ -4,6 +4,11 @@ version = "0.0.0"
 publish = false
 edition = "2021"
 
+# Empty `[workspace]` opts out of the parent workspace at /Cargo.toml.
+# cargo-fuzz expects the fuzz crate to be free-standing so its
+# nightly-only deps (libfuzzer-sys) don't pollute the stable workspace.
+[workspace]
+
 [package.metadata]
 cargo-fuzz = true
 
@@ -20,4 +25,14 @@ test = false
 doc = false
 bench = false
 
-# Run with: cargo +nightly fuzz run reader_open
+[[bin]]
+name = "sections_decode"
+path = "fuzz_targets/sections_decode.rs"
+test = false
+doc = false
+bench = false
+
+# Run with: cargo +nightly fuzz run <target>
+# Targets:
+#   reader_open       — Reader::open against arbitrary bytes
+#   sections_decode   — TSMT / TLOG / TCOL binary section decoders

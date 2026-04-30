@@ -163,6 +163,16 @@ tset inspect out.tset
 # Full integrity check: manifest hash, footer, Merkle root,
 # audit log signature, per-view reproducibility
 tset verify out.tset
+
+# Record a GDPR-Art-17 / RTBF deletion in a dataset's exclusion overlay.
+# Updates exclusions.json, dataset_merkle_root, and the audit log atomically.
+tset add-exclusion ./my-dataset.tset 912c26a1...3aece --reason "GDPR-Art-17 request 2026-04-29"
+
+# Run the language-agnostic conformance suite against any shard.
+# Third-party implementations point this at the canonical expected.json
+# sidecars in tests/conformance/fixtures/ to prove they read the format
+# the same way as the reference impl. Exits non-zero on any mismatch.
+tset conformance my-shard.tset expected.json [--json]
 ```
 
 ---
@@ -268,31 +278,66 @@ tampered proof, verifies the audit-log chain, and pins the SMT root.
 
 ---
 
-## Real tokenizer recipe (BPE / SentencePiece)
+## Real tokenizer recipes (HF / tiktoken / SentencePiece)
 
-Production training pipelines run BPE or SentencePiece, not byte-level
-or whitespace. The HuggingFace `tokenizers` adapter ships in
-`tset.hf_tokenizer`; a runnable end-to-end recipe lives at
-[`examples/recipes/hf_tokenizer_bpe.py`](examples/recipes/hf_tokenizer_bpe.py)
-and walks through:
+Production training pipelines run BPE, tiktoken, or SentencePiece, not
+byte-level or whitespace. TSET ships first-class adapters for all
+three; each has a runnable end-to-end recipe that writes a shard,
+re-streams the tokens, and verifies byte-identical re-tokenization.
 
-1. Train (or load) a HF BPE tokenizer
-2. Wrap it with `HfTokenizer` so it satisfies the `tset.tokenizers.Tokenizer` protocol
+| Stack | Adapter | Recipe |
+|---|---|---|
+| HuggingFace `tokenizers` (BPE/WordPiece/Unigram) | `tset.hf_tokenizer.HfTokenizer` | [`examples/recipes/hf_tokenizer_bpe.py`](examples/recipes/hf_tokenizer_bpe.py) |
+| OpenAI `tiktoken` (cl100k_base, o200k_base, …) | `tset.tiktoken_tokenizer.TiktokenTokenizer` | [`examples/recipes/tiktoken_recipe.py`](examples/recipes/tiktoken_recipe.py) |
+| Google `sentencepiece` (Llama / Mistral / Gemma family) | `tset.sentencepiece_tokenizer.SentencePieceTokenizer` | [`examples/recipes/sentencepiece_recipe.py`](examples/recipes/sentencepiece_recipe.py) |
+
+Each recipe walks the same five-step path:
+
+1. Train (or load) the tokenizer in its native form
+2. Wrap with the matching `tset.*` adapter so it satisfies `tset.tokenizers.Tokenizer`
 3. Write a TSET shard with that view
-4. Verify byte-identical re-tokenization via `Reader.verify_tokenizer_view`
-5. Save the tokenizer JSON alongside; re-load and confirm the `hf_state_digest` matches
+4. Stream tokens back; assert they match `tokenizer.encode()` exactly
+5. Run `Reader.verify_tokenizer_view` to confirm the bit-packed chunks on disk are byte-identical to a fresh re-tokenization
 
 ```bash
-pip install tset tokenizers
+pip install tset tokenizers tiktoken sentencepiece
 python -m examples.recipes.hf_tokenizer_bpe
+python -m examples.recipes.tiktoken_recipe
+python -m examples.recipes.sentencepiece_recipe
 ```
 
-For pretrained tokenizers from the HF Hub, replace step 1 with:
+The adapter pins each tokenizer's identity in the manifest's
+`tokenizer_config`: a digest of the HF JSON state, the tiktoken merge
+table, or the SentencePiece serialized proto. Loading a different
+version of the vocabulary at read time changes the digest, and the
+reproducibility proof rejects.
 
-```python
-from tokenizers import Tokenizer
-hf = Tokenizer.from_pretrained("Qwen/Qwen2.5-0.5B")
-wrapped = HfTokenizer(hf, tokenizer_id="qwen2-5-0-5b")
+For pretrained tokenizers, replace step 1 with the loader appropriate
+to your stack — for example `Tokenizer.from_pretrained` (HF Hub),
+`tiktoken.get_encoding("cl100k_base")`, or `sp.Load("model.spm")`.
+
+---
+
+## Cookbook
+
+Five short, runnable recipes that show TSET in operational shape. Each
+file is self-contained and verified by a smoke test in CI.
+
+| Recipe | What it shows |
+|---|---|
+| [`parquet_to_tset.py`](examples/cookbook/parquet_to_tset.py) | Walk a directory of `.parquet` files into a single shard with metadata columns — five-line core. |
+| [`deletion_end_to_end.py`](examples/cookbook/deletion_end_to_end.py) | Full GDPR-Article-17 chain: receive request → confirm inclusion → add exclusion → republish root → emit non-inclusion proof. |
+| [`verify_offline.py`](examples/cookbook/verify_offline.py) | Verify a shard's pinned roots without any network. Inclusion + non-inclusion proofs locally. |
+| [`multi_shard_streaming.py`](examples/cookbook/multi_shard_streaming.py) | Stream tokens across a 3-shard dataset, with the dataset-level exclusion overlay enforced. |
+| [`training_loop.py`](examples/cookbook/training_loop.py) | Pack streamed tokens into fixed-length training rows with a per-position document-boundary mask. Drop in `torch.from_numpy` and you're done. |
+
+```bash
+pip install tset pyarrow
+python -m examples.cookbook.parquet_to_tset
+python -m examples.cookbook.deletion_end_to_end
+python -m examples.cookbook.verify_offline
+python -m examples.cookbook.multi_shard_streaming
+python -m examples.cookbook.training_loop
 ```
 
 ---
@@ -322,7 +367,9 @@ chain status. Five public APIs total, ~200 lines of script.
 
 ## What this format is *not* (read this before pitching it as compliance)
 
-TSET makes **integrity** claims, not **authenticity** claims. See [RFC §5.7](RFC.md).
+TSET makes **integrity** claims, not **authenticity** claims. See [RFC §5.7](RFC.md)
+and the full security accounting in
+[`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md).
 
 - It does **not** prove a document came from the URL recorded in metadata.
 - It does **not** prove a model trained on a TSET corpus has "forgotten" any document.

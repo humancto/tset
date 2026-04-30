@@ -249,3 +249,242 @@ fn diff_detects_different_doc_set() {
     assert!(s.contains("0 shared"));
     assert!(s.contains("only-in-a") && s.contains("only-in-b"));
 }
+
+// ── add-exclusion ───────────────────────────────────────────────────────
+
+/// Build a minimal dataset directory with a single shard registered
+/// via `DatasetWriter`, returning (root_path, doc_hash_hex_of_first_doc).
+fn make_dataset(dir: &std::path::Path) -> (std::path::PathBuf, String) {
+    use tset_core::dataset::DatasetWriter;
+    use tset_core::tokenizers::ByteLevelTokenizer;
+    use tset_core::Writer;
+
+    let root = dir.join("ds");
+    std::fs::create_dir_all(root.join("shards")).unwrap();
+    let mut w = Writer::create(root.join("shards/part-00001.tset"), None);
+    let h = w.add_document(b"alpha").unwrap();
+    w.add_document(b"beta").unwrap();
+    w.add_tokenizer_view(Box::new(ByteLevelTokenizer)).unwrap();
+    w.close().unwrap();
+
+    let mut dw = DatasetWriter::create(&root).unwrap();
+    dw.register_shard("part-00001").unwrap();
+    dw.close().unwrap();
+
+    (root, hex::encode(h))
+}
+
+#[test]
+fn add_exclusion_records_hash_in_overlay() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, hex) = make_dataset(dir.path());
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg(&hex)
+        .args(["--reason", "GDPR-Art-17 request 2026-04-29"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "add-exclusion failed: {out:?}");
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains(&format!("recorded exclusion of {hex}")));
+    assert!(s.contains("reason: GDPR-Art-17"));
+
+    let excl = std::fs::read_to_string(root.join("exclusions.json")).unwrap();
+    assert!(excl.contains(&hex));
+    let manifest = std::fs::read_to_string(root.join("manifest.tset.json")).unwrap();
+    assert!(manifest.contains("\"exclusion_count\": 1"));
+}
+
+#[test]
+fn add_exclusion_is_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, hex) = make_dataset(dir.path());
+    cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg(&hex)
+        .output()
+        .unwrap();
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg(&hex)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("no-op"), "expected no-op message, got:\n{s}");
+
+    let excl = std::fs::read_to_string(root.join("exclusions.json")).unwrap();
+    // Hash appears exactly once
+    assert_eq!(excl.matches(&hex).count(), 1);
+}
+
+#[test]
+fn add_exclusion_rejects_single_shard_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("in.jsonl");
+    let dst = dir.path().join("out.tset");
+    std::fs::write(&src, "{\"text\": \"alpha\"}\n").unwrap();
+    cli()
+        .args(["convert", "jsonl"])
+        .arg(&src)
+        .arg(&dst)
+        .output()
+        .unwrap();
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&dst)
+        .arg("ab".repeat(32))
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let s = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        s.contains("single .tset file"),
+        "expected single-file rejection, got:\n{s}"
+    );
+}
+
+#[test]
+fn add_exclusion_rejects_invalid_hex() {
+    let dir = tempfile::tempdir().unwrap();
+    let (root, _) = make_dataset(dir.path());
+    let out = cli()
+        .arg("add-exclusion")
+        .arg(&root)
+        .arg("not-hex")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let s = String::from_utf8_lossy(&out.stderr);
+    assert!(s.contains("not valid hex"));
+}
+
+// ── conformance ─────────────────────────────────────────────────────────
+
+#[test]
+fn conformance_passes_against_committed_fixture() {
+    // Fixture lives at the repo level; tests run from the workspace
+    // root (target/debug/deps), so navigate up.
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("conformance")
+        .join("fixtures");
+    let shard = fixtures.join("fixture-small.tset");
+    let expected = fixtures.join("fixture-small.expected.json");
+    if !shard.exists() {
+        eprintln!("skipping: fixture-small.tset not present");
+        return;
+    }
+    let out = cli()
+        .arg("conformance")
+        .arg(&shard)
+        .arg(&expected)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "conformance failed:\n{:?}\n{}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("14 / 14 passed"));
+}
+
+#[test]
+fn conformance_fails_on_mismatched_fixture() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("conformance")
+        .join("fixtures");
+    let shard = fixtures.join("fixture-empty.tset");
+    let expected = fixtures.join("fixture-small.expected.json");
+    if !shard.exists() || !expected.exists() {
+        eprintln!("skipping: fixtures not present");
+        return;
+    }
+    let out = cli()
+        .arg("conformance")
+        .arg(&shard)
+        .arg(&expected)
+        .output()
+        .unwrap();
+    // Non-zero exit on any mismatch is the contract third-party
+    // implementations rely on to detect drift in CI.
+    assert!(!out.status.success());
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("FAIL"));
+    assert!(s.contains("manifest_hash"));
+}
+
+#[test]
+fn conformance_json_output_is_parseable() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("tests")
+        .join("conformance")
+        .join("fixtures");
+    let shard = fixtures.join("fixture-small.tset");
+    let expected = fixtures.join("fixture-small.expected.json");
+    if !shard.exists() {
+        eprintln!("skipping: fixture-small.tset not present");
+        return;
+    }
+    let out = cli()
+        .arg("conformance")
+        .arg(&shard)
+        .arg(&expected)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("--json output must be valid JSON");
+    assert_eq!(v["passed"], v["total"]);
+    assert_eq!(v["failed"], 0);
+    assert!(v["checks"].as_array().unwrap().len() >= 14);
+}
+
+#[test]
+fn conformance_rejects_empty_expected_sidecar() {
+    // Codex P2 on PR #16. An empty (or partially-malformed) sidecar
+    // would otherwise produce "0 / 0 passed" + exit 0 — a third-party
+    // implementation could ship a blank sidecar and claim
+    // conformance. Treat zero recognised checks as a config error.
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("in.jsonl");
+    let dst = dir.path().join("out.tset");
+    std::fs::write(&src, "{\"text\": \"alpha\"}\n").unwrap();
+    cli()
+        .args(["convert", "jsonl"])
+        .arg(&src)
+        .arg(&dst)
+        .output()
+        .unwrap();
+    let blank = dir.path().join("blank.json");
+    std::fs::write(&blank, "{}").unwrap();
+    let out = cli()
+        .arg("conformance")
+        .arg(&dst)
+        .arg(&blank)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "conformance must reject an empty sidecar"
+    );
+    let s = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        s.contains("no recognised fields"),
+        "stderr should explain the rejection, got:\n{s}"
+    );
+}
