@@ -58,6 +58,14 @@ pub struct AuditLog {
     /// Mixed-signature audit logs (some entries signed, some not) are
     /// rejected at verify time to prevent downgrade attacks.
     signer: Option<crate::signing::AuditSigner>,
+    /// Hex-encoded `writer_public_key` captured by `from_json` when an
+    /// existing signed audit log is reopened. Preserved so a
+    /// round-trip (from_json → to_json with NO new entries) emits the
+    /// pubkey alongside the original signatures — otherwise verify
+    /// would reject "signatures present but no pubkey to verify
+    /// against" (Codex P1 on PR #16). Not used when a fresh signer
+    /// is attached.
+    loaded_writer_public_key: Option<String>,
 }
 
 impl AuditLog {
@@ -74,6 +82,16 @@ impl AuditLog {
 
     pub fn signer_public_key(&self) -> Option<[u8; crate::signing::PUBLIC_KEY_LEN]> {
         self.signer.as_ref().map(|s| s.public_key_bytes())
+    }
+
+    /// True iff this log was reopened from a serialized JSON that
+    /// carried a `writer_public_key` AND no fresh signer is attached.
+    /// Higher layers (e.g. `DatasetWriter::open_existing`) use this to
+    /// refuse extending a signed log without the signing key — adding
+    /// unsigned entries would silently downgrade the integrity
+    /// contract.
+    pub fn was_loaded_signed_without_key(&self) -> bool {
+        self.loaded_writer_public_key.is_some() && self.signer.is_none()
     }
 
     pub fn append(&mut self, event_type: &str, payload: Value, timestamp: f64) -> &AuditEntry {
@@ -130,6 +148,13 @@ impl AuditLog {
         });
         if let Some(pk) = self.signer_public_key() {
             out["writer_public_key"] = json!(hex::encode(pk));
+        } else if let Some(loaded) = &self.loaded_writer_public_key {
+            // Round-trip case: log was opened from a signed JSON. No
+            // fresh signer attached, but we MUST emit the original
+            // pubkey so verify_audit_log accepts the existing
+            // signatures. Higher layers prevent appending new
+            // (unsigned) entries via `was_loaded_signed_without_key`.
+            out["writer_public_key"] = json!(loaded);
         }
         out
     }
@@ -179,10 +204,15 @@ impl AuditLog {
                 });
             }
         }
+        let loaded_writer_public_key = v
+            .get("writer_public_key")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         Self {
             entries,
             log_root,
             signer: None,
+            loaded_writer_public_key,
         }
     }
 }
@@ -318,5 +348,35 @@ mod tests {
         );
         let v = log.to_json();
         assert!(verify_audit_log(&v));
+    }
+
+    #[test]
+    fn from_json_preserves_writer_public_key_for_signed_logs() {
+        // Codex P1 on PR #16. Round-tripping a signed audit log
+        // through (to_json → from_json → to_json) must keep the
+        // writer_public_key alive — otherwise verify rejects
+        // "signatures present but no pubkey to verify against".
+        let signer = crate::signing::AuditSigner::generate();
+        let mut log = AuditLog::with_signer(signer);
+        log.append("ingestion", json!({}), 1.0);
+        let original_json = log.to_json();
+        assert!(verify_audit_log(&original_json));
+
+        let reopened = AuditLog::from_json(&original_json);
+        let round_tripped = reopened.to_json();
+        assert!(
+            round_tripped.get("writer_public_key").is_some(),
+            "round-trip dropped writer_public_key — verify will reject"
+        );
+        assert!(verify_audit_log(&round_tripped));
+        assert!(reopened.was_loaded_signed_without_key());
+    }
+
+    #[test]
+    fn from_json_does_not_flag_unsigned_logs() {
+        let mut log = AuditLog::new();
+        log.append("ingestion", json!({}), 1.0);
+        let reopened = AuditLog::from_json(&log.to_json());
+        assert!(!reopened.was_loaded_signed_without_key());
     }
 }

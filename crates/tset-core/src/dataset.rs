@@ -179,10 +179,26 @@ impl ShardEntry {
 
     pub fn from_json(v: &Value) -> Self {
         Self {
-            shard_id: v.get("shard_id").and_then(Value::as_str).unwrap_or("").to_string(),
-            relpath: v.get("relpath").and_then(Value::as_str).unwrap_or("").to_string(),
-            shard_hash: v.get("shard_hash").and_then(Value::as_str).unwrap_or("").to_string(),
-            shard_smt_root: v.get("shard_smt_root").and_then(Value::as_str).unwrap_or("").to_string(),
+            shard_id: v
+                .get("shard_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            relpath: v
+                .get("relpath")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            shard_hash: v
+                .get("shard_hash")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            shard_smt_root: v
+                .get("shard_smt_root")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
             doc_count: v.get("doc_count").and_then(Value::as_u64).unwrap_or(0),
             total_tokens_per_view: v
                 .get("total_tokens_per_view")
@@ -548,6 +564,23 @@ impl DatasetWriter {
             if let Some(audit_json) = manifest.get("audit_log") {
                 audit = AuditLog::from_json(audit_json);
             }
+        }
+        if audit.was_loaded_signed_without_key() {
+            // The existing audit log carries an Ed25519 signing
+            // public key. Adding new (necessarily unsigned) entries
+            // would silently downgrade the integrity contract — the
+            // resulting log would have a mix of signed + unsigned
+            // entries, which `verify_audit_log` rightly rejects, OR
+            // we'd have to drop the public key entirely (also a
+            // downgrade). Refuse the open until a key-injection API
+            // exists. (Codex P1 on PR #16.)
+            return Err(TsetError::BadManifest(
+                "dataset audit log is Ed25519-signed; \
+                 DatasetWriter::open_existing cannot extend it without \
+                 the signing key. Use the Python API with an \
+                 explicit signer, or perform the operation on a \
+                 fresh unsigned dataset",
+            ));
         }
         let mut exclusions = BTreeSet::new();
         let excl_path = root.join(EXCLUSIONS_NAME);

@@ -73,7 +73,10 @@ jobs:
       - name: install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
       - name: generate Rust SBOM
-        run: cargo cyclonedx --format json --output-pattern bom
+        # cargo-cyclonedx 0.5.x uses --override-filename, not the
+        # older --output-pattern flag. Pin format=json so the artefact
+        # is greppable.
+        run: cargo cyclonedx --format json --override-filename bom
       - name: install cyclonedx-py
         run: |
           python -m pip install --upgrade pip

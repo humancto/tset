@@ -453,3 +453,38 @@ fn conformance_json_output_is_parseable() {
     assert_eq!(v["failed"], 0);
     assert!(v["checks"].as_array().unwrap().len() >= 14);
 }
+
+#[test]
+fn conformance_rejects_empty_expected_sidecar() {
+    // Codex P2 on PR #16. An empty (or partially-malformed) sidecar
+    // would otherwise produce "0 / 0 passed" + exit 0 — a third-party
+    // implementation could ship a blank sidecar and claim
+    // conformance. Treat zero recognised checks as a config error.
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("in.jsonl");
+    let dst = dir.path().join("out.tset");
+    std::fs::write(&src, "{\"text\": \"alpha\"}\n").unwrap();
+    cli()
+        .args(["convert", "jsonl"])
+        .arg(&src)
+        .arg(&dst)
+        .output()
+        .unwrap();
+    let blank = dir.path().join("blank.json");
+    std::fs::write(&blank, "{}").unwrap();
+    let out = cli()
+        .arg("conformance")
+        .arg(&dst)
+        .arg(&blank)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "conformance must reject an empty sidecar"
+    );
+    let s = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        s.contains("no recognised fields"),
+        "stderr should explain the rejection, got:\n{s}"
+    );
+}

@@ -91,7 +91,7 @@ impl PyReader {
 
     #[getter]
     fn shard_merkle_root<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        PyBytes::new_bound(py, &self.inner.header.shard_merkle_root)
+        PyBytes::new(py, &self.inner.header.shard_merkle_root)
     }
 
     fn tokenizer_ids(&self) -> PyResult<Vec<String>> {
@@ -118,7 +118,7 @@ impl PyReader {
         let mut h = [0u8; 32];
         h.copy_from_slice(doc_hash);
         let bytes = self.inner.get_document(&h).map_err(map_err)?;
-        Ok(PyBytes::new_bound(py, &bytes))
+        Ok(PyBytes::new(py, &bytes))
     }
 
     /// Returns a list of `(tokens_bytes_le_u32, doc_hash_bytes)` tuples.
@@ -131,13 +131,10 @@ impl PyReader {
     ) -> PyResult<Bound<'py, PyList>> {
         let view = self.inner.open_view(tokenizer_id).map_err(map_err)?;
         let pieces = view.iter_per_doc().map_err(map_err)?;
-        let list = PyList::empty_bound(py);
+        let list = PyList::empty(py);
         for (tokens, doc_hash) in pieces {
             let tokens_bytes = tokens_to_le_bytes(&tokens);
-            let tup = (
-                PyBytes::new_bound(py, &tokens_bytes),
-                PyBytes::new_bound(py, &doc_hash),
-            );
+            let tup = (PyBytes::new(py, &tokens_bytes), PyBytes::new(py, &doc_hash));
             list.append(tup)?;
         }
         Ok(list)
@@ -157,13 +154,13 @@ impl PyReader {
         let Some(section) = self.inner.on_disk_smt().map_err(map_err)? else {
             return Ok(None);
         };
-        let d = pyo3::types::PyDict::new_bound(py);
-        d.set_item("smt_root", PyBytes::new_bound(py, &section.smt_root))?;
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("smt_root", PyBytes::new(py, &section.smt_root))?;
         d.set_item("num_present", section.num_present)?;
         let keys: Vec<Bound<'py, PyBytes>> = section
             .present_keys
             .iter()
-            .map(|k| PyBytes::new_bound(py, k))
+            .map(|k| PyBytes::new(py, k))
             .collect();
         d.set_item("present_keys", keys)?;
         Ok(Some(d))
@@ -179,14 +176,14 @@ impl PyReader {
         let Some(section) = self.inner.on_disk_audit_log().map_err(map_err)? else {
             return Ok(None);
         };
-        let d = pyo3::types::PyDict::new_bound(py);
-        d.set_item("log_root", PyBytes::new_bound(py, &section.log_root))?;
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("log_root", PyBytes::new(py, &section.log_root))?;
         // Round-trip the audit_json through serde_json::to_string then
         // Python json.loads — keeps the conversion bounded and avoids
         // hand-walking serde_json::Value into PyAny.
         let s = serde_json::to_string(&section.audit_json)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let json_module = py.import_bound("json")?;
+        let json_module = py.import("json")?;
         let parsed = json_module.call_method1("loads", (s,))?;
         d.set_item("audit_json", parsed)?;
         Ok(Some(d))
@@ -201,18 +198,18 @@ impl PyReader {
         let Some(section) = self.inner.on_disk_columns().map_err(map_err)? else {
             return Ok(None);
         };
-        let d = pyo3::types::PyDict::new_bound(py);
+        let d = pyo3::types::PyDict::new(py);
         d.set_item("row_count", section.row_count)?;
         let s = serde_json::to_string(&section.columns_json)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let json_module = py.import_bound("json")?;
+        let json_module = py.import("json")?;
         let parsed = json_module.call_method1("loads", (s,))?;
         d.set_item("columns_json", parsed)?;
         Ok(Some(d))
     }
 
     fn smt_root<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        PyBytes::new_bound(py, &self.inner.smt_root())
+        PyBytes::new(py, &self.inner.smt_root())
     }
 
     /// Inclusion proof for a doc that is in this shard. Returns
@@ -389,7 +386,7 @@ impl PyWriter {
             None => w.add_document(content).map_err(map_err)?,
             Some(obj) => {
                 let json_str: String = py
-                    .import_bound("json")?
+                    .import("json")?
                     .call_method1("dumps", (obj,))?
                     .extract()?;
                 let value: serde_json::Value = serde_json::from_str(&json_str)
@@ -401,7 +398,7 @@ impl PyWriter {
                     .map_err(map_err)?
             }
         };
-        Ok(PyBytes::new_bound(py, &h))
+        Ok(PyBytes::new(py, &h))
     }
 
     /// Toggle on emission of v0.3.2 binary sections (TSMT/TLOG/TCOL).
@@ -596,7 +593,7 @@ impl PyDataset {
 
     fn dataset_merkle_root<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         let r = self.inner.dataset_merkle_root().map_err(map_err)?;
-        Ok(PyBytes::new_bound(py, &r))
+        Ok(PyBytes::new(py, &r))
     }
 }
 
@@ -607,10 +604,7 @@ fn generate_signing_key(py: Python<'_>) -> (Bound<'_, PyBytes>, Bound<'_, PyByte
     let signer = AuditSigner::generate();
     let secret = signer.secret_bytes();
     let public = signer.public_key_bytes();
-    (
-        PyBytes::new_bound(py, &secret),
-        PyBytes::new_bound(py, &public),
-    )
+    (PyBytes::new(py, &secret), PyBytes::new(py, &public))
 }
 
 /// Compute the public key for an existing 32-byte secret.
@@ -618,7 +612,7 @@ fn generate_signing_key(py: Python<'_>) -> (Bound<'_, PyBytes>, Bound<'_, PyByte
 fn signing_public_key<'py>(py: Python<'py>, secret_bytes: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
     let s = AuditSigner::from_secret_bytes(secret_bytes)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok(PyBytes::new_bound(py, &s.public_key_bytes()))
+    Ok(PyBytes::new(py, &s.public_key_bytes()))
 }
 
 /// Verify an Ed25519 signature against a public key + message.
@@ -631,7 +625,7 @@ fn verify_audit_signature(public_key: &[u8], message: &[u8], signature: &[u8]) -
 /// to Python so tset.hashing can delegate without re-implementing.
 #[pyfunction]
 fn hash_bytes_py<'py>(py: Python<'py>, data: &[u8]) -> Bound<'py, PyBytes> {
-    PyBytes::new_bound(py, &tset_core::hashing::hash_bytes(data))
+    PyBytes::new(py, &tset_core::hashing::hash_bytes(data))
 }
 
 /// shard_merkle_root over a list of 32-byte hashes (sorted). Mirrors
@@ -650,7 +644,7 @@ fn shard_merkle_root_py<'py>(
         h.copy_from_slice(&l);
         arr.push(h);
     }
-    Ok(PyBytes::new_bound(
+    Ok(PyBytes::new(
         py,
         &tset_core::hashing::shard_merkle_root(&arr),
     ))
@@ -672,7 +666,7 @@ fn merkle_root_unsorted_py<'py>(
         h.copy_from_slice(&l);
         arr.push(h);
     }
-    Ok(PyBytes::new_bound(
+    Ok(PyBytes::new(
         py,
         &tset_core::hashing::merkle_root_unsorted(&arr),
     ))

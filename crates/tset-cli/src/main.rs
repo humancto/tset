@@ -531,12 +531,8 @@ fn cmd_diff(args: &[&str]) -> Result<(), String> {
 // both manifest.tset.json and exclusions.json are rewritten.
 
 fn cmd_add_exclusion(args: &[&str]) -> Result<(), String> {
-    let dataset = args.first().ok_or(
-        "add-exclusion: missing <dataset-dir>",
-    )?;
-    let hex_hash = args.get(1).ok_or(
-        "add-exclusion: missing <hex-doc-hash>",
-    )?;
+    let dataset = args.first().ok_or("add-exclusion: missing <dataset-dir>")?;
+    let hex_hash = args.get(1).ok_or("add-exclusion: missing <hex-doc-hash>")?;
 
     // Optional --reason "..." flag.
     let mut reason = String::new();
@@ -552,10 +548,7 @@ fn cmd_add_exclusion(args: &[&str]) -> Result<(), String> {
                 let value = if let Some(v) = inline_value {
                     v.to_string()
                 } else {
-                    let v = args
-                        .get(i + 1)
-                        .ok_or("--reason needs a value")?
-                        .to_string();
+                    let v = args.get(i + 1).ok_or("--reason needs a value")?.to_string();
                     i += 1;
                     v
                 };
@@ -603,9 +596,7 @@ fn cmd_add_exclusion(args: &[&str]) -> Result<(), String> {
             println!("  reason: {reason}");
         }
     } else {
-        println!(
-            "no-op: {hex_hash} was already excluded — manifest snapshot regenerated"
-        );
+        println!("no-op: {hex_hash} was already excluded — manifest snapshot regenerated");
     }
     println!("  dataset_merkle_root + exclusions.json + audit log refreshed");
     Ok(())
@@ -641,18 +632,14 @@ fn cmd_add_exclusion(args: &[&str]) -> Result<(), String> {
 //   }
 
 fn cmd_conformance(args: &[&str]) -> Result<(), String> {
-    let shard = args
-        .first()
-        .ok_or("conformance: missing <shard.tset>")?;
-    let expected_path = args
-        .get(1)
-        .ok_or("conformance: missing <expected.json>")?;
+    let shard = args.first().ok_or("conformance: missing <shard.tset>")?;
+    let expected_path = args.get(1).ok_or("conformance: missing <expected.json>")?;
     let json_output = args.contains(&"--json");
 
-    let raw = std::fs::read(expected_path)
-        .map_err(|e| format!("conformance: read expected: {e}"))?;
-    let expected: serde_json::Value = serde_json::from_slice(&raw)
-        .map_err(|e| format!("conformance: parse expected: {e}"))?;
+    let raw =
+        std::fs::read(expected_path).map_err(|e| format!("conformance: read expected: {e}"))?;
+    let expected: serde_json::Value =
+        serde_json::from_slice(&raw).map_err(|e| format!("conformance: parse expected: {e}"))?;
 
     let r = Reader::open(Path::new(shard)).map_err(|e| e.to_string())?;
 
@@ -687,18 +674,12 @@ fn cmd_conformance(args: &[&str]) -> Result<(), String> {
         );
     }
     // shard_merkle_root
-    if let Some(want) = expected
-        .get("shard_merkle_root")
-        .and_then(|v| v.as_str())
-    {
+    if let Some(want) = expected.get("shard_merkle_root").and_then(|v| v.as_str()) {
         let got = hex::encode(r.header.shard_merkle_root);
         record("shard_merkle_root", got == want, got, want.to_string());
     }
     // document_count
-    if let Some(want) = expected
-        .get("document_count")
-        .and_then(|v| v.as_u64())
-    {
+    if let Some(want) = expected.get("document_count").and_then(|v| v.as_u64()) {
         let got = r.doc_hashes().count() as u64;
         record(
             "document_count",
@@ -717,8 +698,7 @@ fn cmd_conformance(args: &[&str]) -> Result<(), String> {
             .map_err(|e| e.to_string())?
             .into_iter()
             .collect();
-        let want_ids: std::collections::HashSet<String> =
-            want_views.keys().cloned().collect();
+        let want_ids: std::collections::HashSet<String> = want_views.keys().cloned().collect();
         record(
             "tokenization_views.set",
             got_ids == want_ids,
@@ -751,9 +731,7 @@ fn cmd_conformance(args: &[&str]) -> Result<(), String> {
                 .and_then(|v| v.get(id))
                 .and_then(|v| v.as_object());
             if let Some(view_obj) = view_obj {
-                if let Some(want) =
-                    want_view.get("num_chunks").and_then(|v| v.as_u64())
-                {
+                if let Some(want) = want_view.get("num_chunks").and_then(|v| v.as_u64()) {
                     let got = view_obj
                         .get("chunks")
                         .and_then(|v| v.as_array())
@@ -778,9 +756,7 @@ fn cmd_conformance(args: &[&str]) -> Result<(), String> {
                         want.to_string(),
                     );
                 }
-                if let Some(want) =
-                    want_view.get("config_hash").and_then(|v| v.as_str())
-                {
+                if let Some(want) = want_view.get("config_hash").and_then(|v| v.as_str()) {
                     let got = view_obj
                         .get("config_hash")
                         .and_then(|v| v.as_str())
@@ -798,8 +774,7 @@ fn cmd_conformance(args: &[&str]) -> Result<(), String> {
     }
 
     let total = checks.len();
-    let failed: Vec<&(String, bool, String, String)> =
-        checks.iter().filter(|c| !c.1).collect();
+    let failed: Vec<&(String, bool, String, String)> = checks.iter().filter(|c| !c.1).collect();
 
     if json_output {
         let out = serde_json::json!({
@@ -838,8 +813,25 @@ fn cmd_conformance(args: &[&str]) -> Result<(), String> {
             "{} / {} passed{}",
             total - failed.len(),
             total,
-            if failed.is_empty() { "" } else { "  *** FAILED ***" }
+            if failed.is_empty() {
+                ""
+            } else {
+                "  *** FAILED ***"
+            }
         );
+    }
+
+    if total == 0 {
+        // An empty `expected.json` (or one whose only fields are
+        // unknown to us) would otherwise pass with "0 / 0 passed".
+        // That's a false positive — a third-party impl could ship a
+        // blank sidecar and claim conformance. Treat zero checks as
+        // a configuration error.
+        return Err("expected.json had no recognised fields — \
+             nothing was actually checked. Required fields: \
+             version_minor, manifest_hash, manifest_size, \
+             shard_merkle_root, document_count, tokenization_views"
+            .into());
     }
 
     if failed.is_empty() {
